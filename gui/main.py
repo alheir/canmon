@@ -166,6 +166,17 @@ class CanMonitorApp:
         self.last_update_times = {}  # Stores timestamps of updates
         self.update_timer = None  # For periodic timestamp updates
         
+        # Continuous transmission variables
+        self.continuous_active = False
+        self.continuous_timer = None
+        self.last_angle_data = {
+            'group_id': 0,
+            'angle_type': 'R',
+            'angle_value': '0',
+            'input_method': 'numeric',
+            'angle_string': 'R0'
+        }
+        
         # Historical data for plotting
         self.plot_data = {}
         for i in range(8):
@@ -289,9 +300,36 @@ class CanMonitorApp:
                  text="Format: R|C|O followed by angle value\nExamples: R-34, C0, O67, R+138").grid(
                  row=0, column=2, rowspan=2, sticky=tk.W, padx=5, pady=5)
         
-        # Send button (shared)
-        self.send_preset_btn = ttk.Button(presets_frame, text="Send Angle", command=self.send_tp2_angle)
-        self.send_preset_btn.grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        # Send button (shared) - modify this section
+        send_controls_frame = ttk.Frame(presets_frame)
+        send_controls_frame.grid(row=3, column=0, columnspan=4, sticky=tk.W, padx=5, pady=5)
+        
+        self.send_preset_btn = ttk.Button(send_controls_frame, text="Send Angle", command=self.send_tp2_angle)
+        self.send_preset_btn.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        # Add continuous transmission toggle
+        self.continuous_var = tk.BooleanVar(value=False)
+        self.continuous_check = ttk.Checkbutton(
+            send_controls_frame, 
+            text="Send Continuously", 
+            variable=self.continuous_var,
+            command=self.toggle_continuous_transmission
+        )
+        self.continuous_check.grid(row=0, column=1, padx=5, pady=5)
+        
+        # Add period selection
+        ttk.Label(send_controls_frame, text="Period (ms):").grid(row=0, column=2, padx=5, pady=5)
+        
+        # Available periods from 50ms to 2s
+        periods = [50, 100, 200, 500, 1000, 2000]
+        self.period_combo = ttk.Combobox(
+            send_controls_frame, 
+            width=5, 
+            values=[str(p) for p in periods],
+            state="readonly"
+        )
+        self.period_combo.grid(row=0, column=3, padx=5, pady=5)
+        self.period_combo.current(2)  # Default to 200ms
         
         # Initially hide the string input frame
         self.string_frame.grid_remove()
@@ -440,6 +478,89 @@ class CanMonitorApp:
         else:
             self.numeric_frame.grid_remove()
             self.string_frame.grid()
+    
+    def toggle_continuous_transmission(self):
+        """Starts or stops continuous angle transmission"""
+        if self.continuous_var.get():
+            # Check if we're connected
+            if not self.is_connected:
+                messagebox.showwarning("Not Connected", "Connect to the serial port first")
+                self.continuous_var.set(False)
+                return
+            
+            # Start continuous transmission
+            self.continuous_active = True
+            self.period_combo.configure(state="disabled")  # Disable changing period while active
+            self.send_continuous_angle()
+            self.rx_text.insert(tk.END, f"Started continuous angle transmission ({self.period_combo.get()}ms)\n", "system")
+            self.rx_text.see(tk.END)
+        else:
+            # Stop continuous transmission
+            self.continuous_active = False
+            self.period_combo.configure(state="readonly")  # Re-enable period selection
+            if self.continuous_timer:
+                self.root.after_cancel(self.continuous_timer)
+                self.continuous_timer = None
+            self.rx_text.insert(tk.END, "Stopped continuous angle transmission\n", "system")
+            self.rx_text.see(tk.END)
+
+    def send_continuous_angle(self):
+        """Sends the last angle continuously at the selected period"""
+        if not self.continuous_active or not self.is_connected:
+            return
+        
+        try:
+            # Send the angle using the last stored values
+            group_id = self.last_angle_data['group_id']
+            can_id = f"{0x100 + group_id:x}"
+            
+            # Handle based on which input method was last used
+            if self.last_angle_data['input_method'] == "numeric":
+                angle_type = self.last_angle_data['angle_type']
+                angle_value = self.last_angle_data['angle_value']
+                
+                # Convert angle type and value to hexadecimal bytes
+                data_bytes = []
+                data_bytes.append(f"{ord(angle_type):02x}")
+                for char in angle_value:
+                    data_bytes.append(f"{ord(char):02x}")
+                
+                display_msg = f"Continuous: {angle_type}={angle_value}° (Group {group_id})"
+                
+            else:  # string format
+                angle_string = self.last_angle_data['angle_string']
+                
+                # Convert the entire string to hex bytes
+                data_bytes = []
+                for char in angle_string:
+                    data_bytes.append(f"{ord(char):02x}")
+                
+                display_msg = f"Continuous: {angle_string} (Group {group_id})"
+            
+            # Build CAN command
+            cmd = f"SEND_{can_id}"
+            for byte in data_bytes:
+                cmd += f"_{byte}"
+            
+            # Send the command
+            self.serial_port.write((cmd + "\n").encode('utf-8'))
+            
+            # Periodically log the continuous transmission (once every ~2 seconds)
+            current_time = time.time()
+            if not hasattr(self, 'last_continuous_log') or current_time - self.last_continuous_log >= 2.0:
+                self.rx_text.insert(tk.END, f"{display_msg}\n", "tx_msg")
+                self.rx_text.see(tk.END)
+                self.last_continuous_log = current_time
+            
+            # Schedule the next transmission
+            period = int(self.period_combo.get())
+            self.continuous_timer = self.root.after(period, self.send_continuous_angle)
+            
+        except Exception as e:
+            self.rx_text.insert(tk.END, f"Error in continuous transmission: {str(e)}\n", "error")
+            self.rx_text.see(tk.END)
+            self.continuous_var.set(False)
+            self.toggle_continuous_transmission()  # Stop continuous transmission
     
     def toggle_random_transmission(self):
         """Starts or stops the random transmission mode"""
@@ -605,6 +726,12 @@ class CanMonitorApp:
     
     def on_closing(self):
         """Cleanup when the application is closing"""
+        # Stop continuous transmission if active
+        if self.continuous_active:
+            self.continuous_active = False
+            if self.continuous_timer:
+                self.root.after_cancel(self.continuous_timer)
+        
         # Stop random transmission if active
         self.random_transmission_active = False
         
@@ -730,6 +857,14 @@ class CanMonitorApp:
             except Exception as e:
                 messagebox.showerror("Connection Error", str(e))
         else:
+            # If continuous transmission is active, stop it
+            if self.continuous_active:
+                self.continuous_var.set(False)
+                self.continuous_active = False
+                if self.continuous_timer:
+                    self.root.after_cancel(self.continuous_timer)
+                    self.continuous_timer = None
+            
             self.should_read = False
             if self.serial_port:
                 self.serial_port.close()
@@ -922,11 +1057,19 @@ class CanMonitorApp:
             group_id = int(self.group_combo.get())
             can_id = f"{0x100 + group_id:x}"
             
+            # Store the group ID for continuous transmission
+            self.last_angle_data['group_id'] = group_id
+            
             # Handle based on selected input method
             if self.input_method.get() == "numeric":
                 # Original numerical input handling
                 angle_type = self.angle_type.get()
                 angle_value = self.angle_value.get()
+                
+                # Store values for continuous transmission
+                self.last_angle_data['input_method'] = 'numeric'
+                self.last_angle_data['angle_type'] = angle_type
+                self.last_angle_data['angle_value'] = angle_value
                 
                 try:
                     val = int(angle_value)
@@ -952,11 +1095,15 @@ class CanMonitorApp:
                 # New string format input handling
                 angle_string = self.angle_string.get().strip()
                 
+                # Store values for continuous transmission
+                self.last_angle_data['input_method'] = 'string'
+                self.last_angle_data['angle_string'] = angle_string
+                
                 # Validate the angle string
                 if not self.validate_angle_string(angle_string):
                     messagebox.showerror("Error", "Invalid angle string format.\n"
-                                         "Format should be R|C|O followed by 1-4 digits.\n"
-                                         "Examples: R-34, C0, O67, R+138")
+                                        "Format should be R|C|O followed by 1-4 digits.\n"
+                                        "Examples: R-34, C0, O67, R+138")
                     return
                 
                 # Convert the entire string to hex bytes
@@ -976,6 +1123,13 @@ class CanMonitorApp:
             self.rx_text.insert(tk.END, f"{display_msg}\n", "tx_msg")
             self.rx_text.see(tk.END)
             
+            # If continuous transmission is active, restart it with the new values
+            if self.continuous_active:
+                if self.continuous_timer:
+                    self.root.after_cancel(self.continuous_timer)
+                self.last_continuous_log = 0  # Force log the first message
+                self.continuous_timer = self.root.after(int(self.period_combo.get()), self.send_continuous_angle)
+                
         except Exception as e:
             messagebox.showerror("Error Sending Angle", str(e))
     
