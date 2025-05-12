@@ -8,6 +8,146 @@ import re
 import platform
 import os
 from datetime import datetime
+from collections import deque
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+import matplotlib.animation as animation
+import numpy as np
+
+class PlotWindow:
+    def __init__(self, parent, group_id, data_source):
+        self.window = tk.Toplevel(parent)
+        self.window.title(f"Group {group_id} - Angle Data Plot")
+        self.window.geometry("900x700")
+        self.group_id = group_id
+        self.data_source = data_source
+        
+        # How many seconds of data to show
+        self.time_window = 30
+        
+        # Setup figures for plotting
+        self.setup_plots()
+        
+        # Start animation
+        self.ani = animation.FuncAnimation(
+            self.fig, self.update_plots, interval=100,  # Update every 100ms
+            blit=False)
+        
+        self.window.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+    def setup_plots(self):
+        self.fig = Figure(figsize=(9, 7), dpi=100)
+        
+        # Create three subplots for roll, pitch, and orientation
+        self.roll_plot = self.fig.add_subplot(311)
+        self.roll_plot.set_title("Roll")
+        self.roll_plot.set_ylabel("Degrees")
+        self.roll_plot.grid(True)
+        
+        self.pitch_plot = self.fig.add_subplot(312)
+        self.pitch_plot.set_title("Pitch")
+        self.pitch_plot.set_ylabel("Degrees")
+        self.pitch_plot.grid(True)
+        
+        self.orient_plot = self.fig.add_subplot(313)
+        self.orient_plot.set_title("Orientation")
+        self.orient_plot.set_ylabel("Degrees")
+        self.orient_plot.set_xlabel("Time (seconds)")
+        self.orient_plot.grid(True)
+        
+        # Initial empty lines
+        self.roll_line, = self.roll_plot.plot([], [], 'b-')
+        self.pitch_line, = self.pitch_plot.plot([], [], 'g-')
+        self.orient_line, = self.orient_plot.plot([], [], 'r-')
+        
+        # Common y-axis range for all plots
+        for plot in [self.roll_plot, self.pitch_plot, self.orient_plot]:
+            plot.set_ylim(-180, 180)
+            plot.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+        
+        self.fig.tight_layout()
+        
+        # Add the plot to the window
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.window)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # For toggling plot visibility
+        self.visible_plots = {'roll': True, 'pitch': True, 'orientation': True}
+        
+        # Add controls for toggling plots
+        self.control_frame = ttk.Frame(self.window)
+        self.control_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Checkbuttons to toggle plot visibility
+        self.roll_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.control_frame, text="Show Roll", 
+                       variable=self.roll_var, 
+                       command=lambda: self.toggle_plot('roll')).pack(side=tk.LEFT, padx=5)
+        
+        self.pitch_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.control_frame, text="Show Pitch", 
+                        variable=self.pitch_var, 
+                        command=lambda: self.toggle_plot('pitch')).pack(side=tk.LEFT, padx=5)
+        
+        self.orient_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.control_frame, text="Show Orientation", 
+                        variable=self.orient_var, 
+                        command=lambda: self.toggle_plot('orientation')).pack(side=tk.LEFT, padx=5)
+        
+    def toggle_plot(self, plot_name):
+        if plot_name == 'roll':
+            self.visible_plots['roll'] = self.roll_var.get()
+        elif plot_name == 'pitch':
+            self.visible_plots['pitch'] = self.pitch_var.get()
+        elif plot_name == 'orientation':
+            self.visible_plots['orientation'] = self.orient_var.get()
+    
+    def update_plots(self, frame):
+        # Get data for this group
+        data = self.data_source.get_plot_data(self.group_id)
+        
+        # Current time for reference
+        now = time.time()
+        
+        # Filter data to show only the last time_window seconds
+        roll_data = [(t, v) for t, v in data['R'] if now - t <= self.time_window]
+        pitch_data = [(t, v) for t, v in data['C'] if now - t <= self.time_window]
+        orient_data = [(t, v) for t, v in data['O'] if now - t <= self.time_window]
+        
+        # Update each plot
+        if roll_data and self.visible_plots['roll']:
+            times, values = zip(*roll_data) if roll_data else ([], [])
+            # Convert absolute timestamps to seconds ago
+            rel_times = [now - t for t in times]
+            self.roll_line.set_data(rel_times, values)
+            self.roll_plot.set_xlim(self.time_window, 0)  # Reversed x-axis (newest data on right)
+        else:
+            self.roll_line.set_data([], [])
+            
+        if pitch_data and self.visible_plots['pitch']:
+            times, values = zip(*pitch_data) if pitch_data else ([], [])
+            rel_times = [now - t for t in times]
+            self.pitch_line.set_data(rel_times, values)
+            self.pitch_plot.set_xlim(self.time_window, 0)
+        else:
+            self.pitch_line.set_data([], [])
+            
+        if orient_data and self.visible_plots['orientation']:
+            times, values = zip(*orient_data) if orient_data else ([], [])
+            rel_times = [now - t for t in times]
+            self.orient_line.set_data(rel_times, values)
+            self.orient_plot.set_xlim(self.time_window, 0)
+        else:
+            self.orient_line.set_data([], [])
+        
+        return self.roll_line, self.pitch_line, self.orient_line
+    
+    def on_close(self):
+        # Stop the animation when window is closed
+        self.ani.event_source.stop()
+        self.window.destroy()
 
 class CanMonitorApp:
     def __init__(self, root):
@@ -24,12 +164,30 @@ class CanMonitorApp:
         self.last_update_times = {}  # Stores timestamps of updates
         self.update_timer = None  # For periodic timestamp updates
         
+        # Historical data for plotting
+        self.plot_data = {}
+        for i in range(8):
+            self.plot_data[i] = {
+                'R': deque(maxlen=500),  # Store up to 500 points
+                'C': deque(maxlen=500),
+                'O': deque(maxlen=500)
+            }
+        
+        # Reference to plot windows
+        self.plot_windows = {}
+        
         # Create interface
         self.create_widgets()
         
         # Update COM port list
         self.refresh_ports()
     
+    def get_plot_data(self, group_id):
+        """Retrieves plot data for a specific group (used by PlotWindow)"""
+        if group_id in self.plot_data:
+            return self.plot_data[group_id]
+        return {'R': deque(), 'C': deque(), 'O': deque()}
+
     def create_widgets(self):
         # Main frame with two columns
         main_frame = ttk.Frame(self.root, padding=10)
@@ -204,6 +362,19 @@ class CanMonitorApp:
                 'O': None,
                 'any': None
             }
+        
+        # Button to open plotting window in the TP2 section
+        plotting_frame = ttk.LabelFrame(right_frame, text="Real-time Plotting", padding=10)
+        plotting_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(plotting_frame, text="Select Group:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.plot_group_combo = ttk.Combobox(plotting_frame, width=5, values=[f"{i}" for i in range(8)])
+        self.plot_group_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
+        self.plot_group_combo.current(0)
+        
+        self.open_plot_btn = ttk.Button(plotting_frame, text="Open Plot Window", 
+                                        command=self.open_plot_window)
+        self.open_plot_btn.grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
 
     def toggle_input_method(self):
         """Toggles between numeric and string input methods"""
@@ -416,11 +587,22 @@ class CanMonitorApp:
                         # If we could identify an angle type and value, update the table
                         if angle_type and angle_value and angle_type in ['R', 'C', 'O']:
                             now = datetime.now()
+                            current_time = time.time()
                             
                             # Update the timestamp for this group and angle type
                             if group_id in self.last_update_times:
                                 self.last_update_times[group_id][angle_type] = now
                                 self.last_update_times[group_id]['any'] = now
+                            
+                            # Store data for plotting
+                            try:
+                                # Convert angle value to float and store with timestamp
+                                angle_float = float(angle_value)
+                                if group_id in self.plot_data and angle_type in self.plot_data[group_id]:
+                                    self.plot_data[group_id][angle_type].append((current_time, angle_float))
+                            except ValueError:
+                                # If conversion fails, don't store for plotting
+                                pass
                             
                             # Update the value in the table based on the angle type
                             item_id = self.tp2_tree.get_children()[group_id]
@@ -686,6 +868,26 @@ class CanMonitorApp:
                 'O': None,
                 'any': None
             }
+            # Clear plotting data
+            if i in self.plot_data:
+                for angle_type in self.plot_data[i]:
+                    self.plot_data[i][angle_type].clear()
+
+    def open_plot_window(self):
+        """Opens a new window with real-time plots for the selected group"""
+        try:
+            group_id = int(self.plot_group_combo.get())
+            
+            # If a window already exists for this group, bring it to front
+            if group_id in self.plot_windows and self.plot_windows[group_id].window.winfo_exists():
+                self.plot_windows[group_id].window.lift()
+                return
+            
+            # Create a new plot window
+            self.plot_windows[group_id] = PlotWindow(self.root, group_id, self)
+            
+        except Exception as e:
+            messagebox.showerror("Plot Error", str(e))
 
 if __name__ == "__main__":
     root = tk.Tk()
