@@ -552,7 +552,7 @@ class CanMonitorApp:
                 reason = "2s timeout"
             
             # Only send if minimum interval passed (max 20 packets/second)
-            if should_send and (current_time - last_global_send) >= 0.05:  # 50ms minimum interval
+            if should_send and (current_time - last_global_send) >= 0.250:  # 250ms minimum interval (aiming for 50ms)
                 # Send the angle
                 can_id = f"{0x100 + group_id:x}"
                 
