@@ -20,47 +20,47 @@ class CanMonitorApp:
         self.is_connected = False
         self.reading_thread = None
         self.should_read = False
-        self.port_info = {}  # Almacenará información detallada de los puertos
-        self.last_update_times = {}  # Almacenará timestamps de actualizaciones
-        self.update_timer = None  # Para la actualización periódica de timestamps
+        self.port_info = {}  # Stores detailed port information
+        self.last_update_times = {}  # Stores timestamps of updates
+        self.update_timer = None  # For periodic timestamp updates
         
-        # Crear interfaz
+        # Create interface
         self.create_widgets()
         
-        # Actualizar lista de puertos COM
+        # Update COM port list
         self.refresh_ports()
     
     def create_widgets(self):
-        # Marco principal con dos columnas
+        # Main frame with two columns
         main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # === COLUMNA IZQUIERDA ===
-        left_frame = ttk.LabelFrame(main_frame, text="Conexión y Control", padding=10)
+        # === LEFT COLUMN ===
+        left_frame = ttk.LabelFrame(main_frame, text="Connection and Control", padding=10)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        # Sección de conexión serial
+        # Serial connection section
         conn_frame = ttk.Frame(left_frame)
         conn_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(conn_frame, text="Puerto:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(conn_frame, text="Port:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.port_combo = ttk.Combobox(conn_frame, width=25)
         self.port_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         self.port_combo.bind('<<ComboboxSelected>>', self.on_port_selected)
         
-        self.refresh_btn = ttk.Button(conn_frame, text="Actualizar", command=self.refresh_ports)
+        self.refresh_btn = ttk.Button(conn_frame, text="Refresh", command=self.refresh_ports)
         self.refresh_btn.grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
         
-        self.connect_btn = ttk.Button(conn_frame, text="Conectar", command=self.toggle_connection)
+        self.connect_btn = ttk.Button(conn_frame, text="Connect", command=self.toggle_connection)
         self.connect_btn.grid(row=0, column=3, sticky=tk.W, padx=5, pady=5)
 
-        # Información de puerto
+        # Port information
         self.port_info_label = ttk.Label(conn_frame, text="", wraplength=300)
         self.port_info_label.grid(row=1, column=0, columnspan=4, sticky=tk.W, padx=5, pady=5)
         
-        # Sección de envío de mensajes CAN personalizados
-        send_frame = ttk.LabelFrame(left_frame, text="Enviar mensaje CAN", padding=10)
+        # Section for sending custom CAN messages
+        send_frame = ttk.LabelFrame(left_frame, text="Send CAN Message", padding=10)
         send_frame.pack(fill=tk.X, pady=10)
         
         ttk.Label(send_frame, text="ID (hex):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
@@ -68,108 +68,108 @@ class CanMonitorApp:
         self.can_id_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         self.can_id_entry.insert(0, "100")
         
-        ttk.Label(send_frame, text="Datos (hex):").grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(send_frame, text="Data (hex):").grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
         self.can_data_entry = ttk.Entry(send_frame, width=20)
         self.can_data_entry.grid(row=0, column=3, sticky=tk.W, padx=5, pady=5)
         
-        self.send_btn = ttk.Button(send_frame, text="Enviar", command=self.send_can_message)
+        self.send_btn = ttk.Button(send_frame, text="Send", command=self.send_can_message)
         self.send_btn.grid(row=0, column=4, sticky=tk.W, padx=5, pady=5)
         
-        # Sección de presets para TP2
-        presets_frame = ttk.LabelFrame(left_frame, text="Presets TP2", padding=10)
+        # Section for TP2 presets
+        presets_frame = ttk.LabelFrame(left_frame, text="TP2 Presets", padding=10)
         presets_frame.pack(fill=tk.X, pady=10)
         
-        # Selección de grupo
-        ttk.Label(presets_frame, text="Grupo:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        # Group selection
+        ttk.Label(presets_frame, text="Group:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         self.group_combo = ttk.Combobox(presets_frame, width=5, values=[f"{i}" for i in range(8)])
         self.group_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         self.group_combo.current(0)
         self.group_combo.bind("<<ComboboxSelected>>", self.on_group_selected)
         
-        # Tipo de ángulo
-        ttk.Label(presets_frame, text="Tipo:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        # Angle type
+        ttk.Label(presets_frame, text="Type:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.angle_type = tk.StringVar(value="R")
-        ttk.Radiobutton(presets_frame, text="Rolido (R)", variable=self.angle_type, value="R").grid(row=1, column=1)
-        ttk.Radiobutton(presets_frame, text="Cabeceo (C)", variable=self.angle_type, value="C").grid(row=1, column=2)
-        ttk.Radiobutton(presets_frame, text="Orientación (O)", variable=self.angle_type, value="O").grid(row=1, column=3)
+        ttk.Radiobutton(presets_frame, text="Roll (R)", variable=self.angle_type, value="R").grid(row=1, column=1)
+        ttk.Radiobutton(presets_frame, text="Pitch (C)", variable=self.angle_type, value="C").grid(row=1, column=2)
+        ttk.Radiobutton(presets_frame, text="Orientation (O)", variable=self.angle_type, value="O").grid(row=1, column=3)
         
-        # Valor del ángulo
-        ttk.Label(presets_frame, text="Ángulo:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        # Angle value
+        ttk.Label(presets_frame, text="Angle:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.angle_value = ttk.Spinbox(presets_frame, from_=-179, to=180, width=5)
         self.angle_value.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
         self.angle_value.set("0")
         
-        self.send_preset_btn = ttk.Button(presets_frame, text="Enviar ángulo", command=self.send_tp2_angle)
+        self.send_preset_btn = ttk.Button(presets_frame, text="Send Angle", command=self.send_tp2_angle)
         self.send_preset_btn.grid(row=2, column=3, sticky=tk.W, padx=5, pady=5)
         
-        # Modo CAN
-        mode_frame = ttk.LabelFrame(left_frame, text="Modo CAN", padding=10)
+        # CAN Mode
+        mode_frame = ttk.LabelFrame(left_frame, text="CAN Mode", padding=10)
         mode_frame.pack(fill=tk.X, pady=10)
         
-        self.normal_mode_btn = ttk.Button(mode_frame, text="Modo Normal", command=lambda: self.set_can_mode("NORMAL"))
+        self.normal_mode_btn = ttk.Button(mode_frame, text="Normal Mode", command=lambda: self.set_can_mode("NORMAL"))
         self.normal_mode_btn.grid(row=0, column=0, padx=5, pady=5)
         
-        self.loopback_mode_btn = ttk.Button(mode_frame, text="Modo Loopback", command=lambda: self.set_can_mode("LOOPBACK"))
+        self.loopback_mode_btn = ttk.Button(mode_frame, text="Loopback Mode", command=lambda: self.set_can_mode("LOOPBACK"))
         self.loopback_mode_btn.grid(row=0, column=1, padx=5, pady=5)
         
-        # === COLUMNA DERECHA ===
-        right_frame = ttk.LabelFrame(main_frame, text="Mensajes CAN", padding=10)
+        # === RIGHT COLUMN ===
+        right_frame = ttk.LabelFrame(main_frame, text="CAN Messages", padding=10)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        # Área para mostrar mensajes recibidos
+        # Area to display received messages
         self.rx_text = scrolledtext.ScrolledText(right_frame, width=50, height=20)
         self.rx_text.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        # Configurar colores para los mensajes
+        # Configure colors for messages
         self.rx_text.tag_config("tx_msg", foreground="green")
         self.rx_text.tag_config("rx_msg", foreground="blue")
         self.rx_text.tag_config("system", foreground="black")
         self.rx_text.tag_config("error", foreground="red")
         
-        # Botones para limpiar y habilitar/deshabilitar autoscroll
+        # Buttons to clear and enable/disable autoscroll
         btn_frame = ttk.Frame(right_frame)
         btn_frame.pack(fill=tk.X, pady=5)
         
-        self.clear_btn = ttk.Button(btn_frame, text="Limpiar", command=lambda: self.rx_text.delete(1.0, tk.END))
+        self.clear_btn = ttk.Button(btn_frame, text="Clear", command=lambda: self.rx_text.delete(1.0, tk.END))
         self.clear_btn.pack(side=tk.LEFT, padx=5)
         
-        # Área para mensajes TP2 interpretados
-        tp2_frame = ttk.LabelFrame(right_frame, text="Mensajes TP2 Interpretados", padding=10)
+        # Area for interpreted TP2 messages
+        tp2_frame = ttk.LabelFrame(right_frame, text="Interpreted TP2 Messages", padding=10)
         tp2_frame.pack(fill=tk.X, pady=10)
         
-        # Tabla para mostrar ángulos
-        columns = ('grupo', 'rolido', 'rolido_tiempo', 'cabeceo', 'cabeceo_tiempo', 'orientacion', 'orientacion_tiempo', 'ultima_act')
+        # Table to display angles
+        columns = ('group', 'roll', 'roll_time', 'pitch', 'pitch_time', 'orientation', 'orientation_time', 'last_update')
         self.tp2_tree = ttk.Treeview(tp2_frame, columns=columns, show='headings', height=8)
         
-        # Definir encabezados
-        self.tp2_tree.heading('grupo', text='Grupo')
-        self.tp2_tree.heading('rolido', text='Rolido')
-        self.tp2_tree.heading('rolido_tiempo', text='Tiempo R')
-        self.tp2_tree.heading('cabeceo', text='Cabeceo')
-        self.tp2_tree.heading('cabeceo_tiempo', text='Tiempo C')
-        self.tp2_tree.heading('orientacion', text='Orientación')
-        self.tp2_tree.heading('orientacion_tiempo', text='Tiempo O')
-        self.tp2_tree.heading('ultima_act', text='Última Act.')
+        # Define headers
+        self.tp2_tree.heading('group', text='Group')
+        self.tp2_tree.heading('roll', text='Roll')
+        self.tp2_tree.heading('roll_time', text='Roll Time')
+        self.tp2_tree.heading('pitch', text='Pitch')
+        self.tp2_tree.heading('pitch_time', text='Pitch Time')
+        self.tp2_tree.heading('orientation', text='Orientation')
+        self.tp2_tree.heading('orientation_time', text='Orientation Time')
+        self.tp2_tree.heading('last_update', text='Last Update')
         
-        # Ajustar anchos de columnas
-        self.tp2_tree.column('grupo', width=50, anchor=tk.CENTER)
-        self.tp2_tree.column('rolido', width=60, anchor=tk.CENTER)
-        self.tp2_tree.column('rolido_tiempo', width=80, anchor=tk.CENTER)
-        self.tp2_tree.column('cabeceo', width=60, anchor=tk.CENTER)
-        self.tp2_tree.column('cabeceo_tiempo', width=80, anchor=tk.CENTER)
-        self.tp2_tree.column('orientacion', width=60, anchor=tk.CENTER)
-        self.tp2_tree.column('orientacion_tiempo', width=80, anchor=tk.CENTER)
-        self.tp2_tree.column('ultima_act', width=100, anchor=tk.CENTER)
+        # Adjust column widths
+        self.tp2_tree.column('group', width=50, anchor=tk.CENTER)
+        self.tp2_tree.column('roll', width=60, anchor=tk.CENTER)
+        self.tp2_tree.column('roll_time', width=80, anchor=tk.CENTER)
+        self.tp2_tree.column('pitch', width=60, anchor=tk.CENTER)
+        self.tp2_tree.column('pitch_time', width=80, anchor=tk.CENTER)
+        self.tp2_tree.column('orientation', width=60, anchor=tk.CENTER)
+        self.tp2_tree.column('orientation_time', width=80, anchor=tk.CENTER)
+        self.tp2_tree.column('last_update', width=100, anchor=tk.CENTER)
         
-        # Estilos para la tabla
+        # Styles for the table
         self.tp2_tree.tag_configure('stale', foreground='gray')
         self.tp2_tree.tag_configure('active', foreground='black')
         
         self.tp2_tree.pack(fill=tk.BOTH, expand=True)
         
-        # Inicializar con grupos del 0 al 7 (según TP2)
+        # Initialize with groups 0 to 7 (according to TP2)
         for i in range(8):
-            self.tp2_tree.insert('', tk.END, values=(i, '--', 'Nunca', '--', 'Nunca', '--', 'Nunca', 'Nunca'), tags=('stale',))
+            self.tp2_tree.insert('', tk.END, values=(i, '--', 'Never', '--', 'Never', '--', 'Never', 'Never'), tags=('stale',))
             self.last_update_times[i] = {
                 'R': None,
                 'C': None,
@@ -178,43 +178,43 @@ class CanMonitorApp:
             }
 
     def on_port_selected(self, event):
-        """Muestra información detallada del puerto seleccionado"""
+        """Displays detailed information about the selected port"""
         selected = self.port_combo.get()
         if selected in self.port_info:
             info = self.port_info[selected]
-            info_text = f"Puerto: {info['device']}\n"
+            info_text = f"Port: {info['device']}\n"
             if info['description']:
-                info_text += f"Descripción: {info['description']}\n"
+                info_text += f"Description: {info['description']}\n"
             if info['manufacturer']:
-                info_text += f"Fabricante: {info['manufacturer']}\n"
+                info_text += f"Manufacturer: {info['manufacturer']}\n"
             if info['hwid']:
                 info_text += f"Hardware ID: {info['hwid']}\n"
             if info['serial_number'] and info['serial_number'] != 'None':
-                info_text += f"Número de serie: {info['serial_number']}\n"
+                info_text += f"Serial Number: {info['serial_number']}\n"
             
             self.port_info_label.config(text=info_text)
         else:
             self.port_info_label.config(text="")
     
     def on_group_selected(self, event):
-        """Actualiza la entrada de ID CAN cuando se selecciona un grupo"""
+        """Updates the CAN ID entry when a group is selected"""
         group_id = int(self.group_combo.get())
         can_id = f"{0x100 + group_id:x}"
         self.can_id_entry.delete(0, tk.END)
         self.can_id_entry.insert(0, can_id)
     
     def refresh_ports(self):
-        """Actualiza la lista de puertos serie disponibles con información detallada"""
+        """Updates the list of available serial ports with detailed information"""
         self.port_info = {}
         ports = []
         display_names = []
         
         try:
             for port in serial.tools.list_ports.comports():
-                # Crear un identificador único para el puerto
+                # Create a unique identifier for the port
                 port_id = port.device
                 
-                # Guardar información detallada del puerto
+                # Save detailed port information
                 self.port_info[port_id] = {
                     'device': port.device,
                     'name': port.name if hasattr(port, 'name') else '',
@@ -228,7 +228,7 @@ class CanMonitorApp:
                     'interface': port.interface if hasattr(port, 'interface') else '',
                 }
                 
-                # Crear un nombre descriptivo para mostrar en el ComboBox
+                # Create a descriptive name to display in the ComboBox
                 display_name = port.device
                 if port.description and port.description != port.device:
                     display_name = f"{port.device} - {port.description}"
@@ -237,112 +237,112 @@ class CanMonitorApp:
                 ports.append(port_id)
         
         except Exception as e:
-            messagebox.showerror("Error", f"Error al detectar puertos: {str(e)}")
+            messagebox.showerror("Error", f"Error detecting ports: {str(e)}")
         
-        # Actualizar el ComboBox
+        # Update the ComboBox
         self.port_combo['values'] = display_names
         if display_names:
             self.port_combo.current(0)
-            self.on_port_selected(None)  # Mostrar info del primer puerto
+            self.on_port_selected(None)  # Show info for the first port
         else:
-            self.port_info_label.config(text="No se detectaron puertos serie")
+            self.port_info_label.config(text="No serial ports detected")
     
     def toggle_connection(self):
-        """Conecta o desconecta del puerto serial"""
+        """Connects or disconnects from the serial port"""
         if not self.is_connected:
             selected = self.port_combo.get()
             
-            # Extraer el nombre del dispositivo del texto mostrado (puede contener descripción)
+            # Extract the device name from the displayed text (may contain description)
             device = selected.split(' - ')[0] if ' - ' in selected else selected
             
-            # Si está en el diccionario de info, usar ese puerto
+            # If it's in the info dictionary, use that port
             if device in self.port_info:
                 port = self.port_info[device]['device']
             else:
-                # Si no está en el diccionario, usar lo seleccionado directamente
+                # If not in the dictionary, use the selected directly
                 port = device
                 
             try:
                 self.serial_port = serial.Serial(port, 115200, timeout=1)
                 self.is_connected = True
-                self.connect_btn['text'] = "Desconectar"
+                self.connect_btn['text'] = "Disconnect"
                 self.should_read = True
                 
-                # Restablecer datos TP2 al conectar
+                # Reset TP2 data on connect
                 self.reset_tp2_data()
                 
-                # Iniciar hilo para lectura continua
+                # Start thread for continuous reading
                 self.reading_thread = threading.Thread(target=self.read_serial_data)
                 self.reading_thread.daemon = True
                 self.reading_thread.start()
                 
-                # Iniciar actualización periódica de timestamps
+                # Start periodic timestamp updates
                 self.start_timestamp_updates()
                 
-                # Mostrar información del sistema
+                # Display system information
                 os_info = platform.platform()
-                self.rx_text.insert(tk.END, f"Sistema: {os_info}\n", "system")
-                self.rx_text.insert(tk.END, f"Conectado a {port} @ 115200 bps\n", "system")
+                self.rx_text.insert(tk.END, f"System: {os_info}\n", "system")
+                self.rx_text.insert(tk.END, f"Connected to {port} @ 115200 bps\n", "system")
                 self.rx_text.see(tk.END)
             except Exception as e:
-                messagebox.showerror("Error de conexión", str(e))
+                messagebox.showerror("Connection Error", str(e))
         else:
             self.should_read = False
             if self.serial_port:
                 self.serial_port.close()
             self.is_connected = False
-            self.connect_btn['text'] = "Conectar"
-            self.rx_text.insert(tk.END, "Desconectado\n", "system")
+            self.connect_btn['text'] = "Connect"
+            self.rx_text.insert(tk.END, "Disconnected\n", "system")
             self.rx_text.see(tk.END)
             
-            # Restablecer datos TP2 al desconectar
+            # Reset TP2 data on disconnect
             self.reset_tp2_data()
             
-            # Detener actualización de timestamps
+            # Stop timestamp updates
             self.stop_timestamp_updates()
     
     def read_serial_data(self):
-        """Lee datos del puerto serial continuamente"""
+        """Reads data from the serial port continuously"""
         while self.should_read:
             if self.serial_port and self.serial_port.in_waiting:
                 try:
                     data = self.serial_port.readline().decode('utf-8').strip()
                     self.process_received_data(data)
                 except Exception as e:
-                    self.root.after(0, lambda: self.rx_text.insert(tk.END, f"Error de lectura: {str(e)}\n", "error"))
+                    self.root.after(0, lambda: self.rx_text.insert(tk.END, f"Read Error: {str(e)}\n", "error"))
                     self.root.after(0, lambda: self.rx_text.see(tk.END))
             time.sleep(0.01)
     
     def process_received_data(self, data):
-        """Procesa los datos recibidos por serial"""
+        """Processes data received via serial"""
         if not data:
             return
         
-        # Añadir al área de texto con color azul para recepción
+        # Add to text area with blue color for reception
         self.root.after(0, lambda: self.rx_text.insert(tk.END, f"{data}\n", "rx_msg"))
         self.root.after(0, lambda: self.rx_text.see(tk.END))
         
-        # Comprobar si es un mensaje CAN del formato TP2
+        # Check if it's a CAN message in TP2 format
         if data.startswith("CAN_RX_"):
             try:
-                # Formato esperado: CAN_RX_ID_LEN_BYTE1_BYTE2_..._TP2_TYPE_VALUE
+                # Expected format: CAN_RX_ID_LEN_BYTE1_BYTE2_..._TP2_TYPE_VALUE
                 parts = data.split("_")
                 
                 if len(parts) >= 5:
-                    # Extraer ID para determinar el grupo
+                    # Extract ID to determine the group
                     id_hex = parts[2]
                     try:
                         group_id = int(id_hex, 16) - 0x100
                     except ValueError:
-                        print(f"Error al convertir ID: {id_hex}")
+                        print(f"Error converting ID: {id_hex}")
                         return
                         
-                    # Verificar si es un ID dentro del rango TP2 (0x100-0x107)
+                    # Verify if it's an ID within the TP2 range (0x100-0x107)
                     if 0 <= group_id <= 7:
                         angle_type = None
                         angle_value = None
                         
-                        # Buscar si hay información TP2
+                        # Look for TP2 information
                         if "TP2" in parts:
                             tp2_index = parts.index("TP2")
                             
@@ -350,9 +350,9 @@ class CanMonitorApp:
                                 angle_type = parts[tp2_index + 1]
                                 angle_value = parts[tp2_index + 2]
                         else:
-                            # Intentar interpretar basado en el formato esperado del TP2
-                            if len(parts) >= 6:  # Al menos tenemos CAN_RX_ID_LEN_BYTE1
-                                # Verificar si el primer byte podría ser un tipo de ángulo
+                            # Attempt to interpret based on the expected TP2 format
+                            if len(parts) >= 6:  # At least we have CAN_RX_ID_LEN_BYTE1
+                                # Verify if the first byte could be an angle type
                                 len_idx = 3
                                 first_byte_idx = 4
                                 
@@ -364,75 +364,75 @@ class CanMonitorApp:
                                         if char_value in ['R', 'C', 'O']:
                                             angle_type = char_value
                                             
-                                            # Intentar construir el valor del ángulo de los bytes restantes
+                                            # Attempt to construct the angle value from the remaining bytes
                                             angle_value = ""
                                             for i in range(first_byte_idx + 1, len(parts)):
                                                 try:
                                                     byte_value = int(parts[i], 16)
-                                                    if 32 <= byte_value <= 126:  # Rango ASCII imprimible
+                                                    if 32 <= byte_value <= 126:  # Printable ASCII range
                                                         angle_value += chr(byte_value)
                                                 except ValueError:
                                                     pass
                                     except ValueError:
                                         pass
                         
-                        # Si pudimos identificar un tipo y valor de ángulo, actualizar la tabla
+                        # If we could identify an angle type and value, update the table
                         if angle_type and angle_value and angle_type in ['R', 'C', 'O']:
                             now = datetime.now()
                             
-                            # Actualizar el timestamp para este grupo y tipo de ángulo
+                            # Update the timestamp for this group and angle type
                             if group_id in self.last_update_times:
                                 self.last_update_times[group_id][angle_type] = now
                                 self.last_update_times[group_id]['any'] = now
                             
-                            # Actualizar el valor en la tabla según el tipo de ángulo
+                            # Update the value in the table based on the angle type
                             item_id = self.tp2_tree.get_children()[group_id]
                             current_values = self.tp2_tree.item(item_id, 'values')
                             new_values = list(current_values)
                             
                             if angle_type == 'R':
-                                new_values[1] = angle_value + "°"  # Rolido valor
-                                new_values[2] = "Ahora"  # Rolido tiempo
+                                new_values[1] = angle_value + "°"  # Roll value
+                                new_values[2] = "Now"  # Roll time
                             elif angle_type == 'C':
-                                new_values[3] = angle_value + "°"  # Cabeceo valor
-                                new_values[4] = "Ahora"  # Cabeceo tiempo
+                                new_values[3] = angle_value + "°"  # Pitch value
+                                new_values[4] = "Now"  # Pitch time
                             elif angle_type == 'O':
-                                new_values[5] = angle_value + "°"  # Orientación valor
-                                new_values[6] = "Ahora"  # Orientación tiempo
+                                new_values[5] = angle_value + "°"  # Orientation value
+                                new_values[6] = "Now"  # Orientation time
                             
-                            # Actualizar timestamp de última actualización
-                            new_values[7] = "Ahora"
+                            # Update last update timestamp
+                            new_values[7] = "Now"
                             
-                            # Marcar la fila como activa
+                            # Mark the row as active
                             self.tp2_tree.item(item_id, values=tuple(new_values), tags=('active',))
             except Exception as e:
-                print(f"Error al procesar mensaje TP2: {str(e)}")
+                print(f"Error processing TP2 message: {str(e)}")
     
     def send_can_message(self):
-        """Envía un mensaje CAN usando ID y datos personalizados"""
+        """Sends a CAN message using custom ID and data"""
         if not self.is_connected:
-            messagebox.showwarning("No conectado", "Conecte primero al puerto serial")
+            messagebox.showwarning("Not Connected", "Connect to the serial port first")
             return
         
         try:
             can_id = self.can_id_entry.get().strip()
             can_data = self.can_data_entry.get().strip()
             
-            # Validar ID hexadecimal
+            # Validate hexadecimal ID
             try:
                 id_val = int(can_id, 16)
                 if id_val < 0 or id_val > 0x7FF:
-                    raise ValueError("ID debe estar entre 0 y 0x7FF")
+                    raise ValueError("ID must be between 0 and 0x7FF")
             except ValueError:
-                messagebox.showerror("Error", "ID debe ser un valor hexadecimal válido")
+                messagebox.showerror("Error", "ID must be a valid hexadecimal value")
                 return
             
-            # Validar datos
+            # Validate data
             if not can_data:
-                messagebox.showerror("Error", "Datos no pueden estar vacíos")
+                messagebox.showerror("Error", "Data cannot be empty")
                 return
             
-            # Convertir datos a formato hexadecimal separado por guiones bajos
+            # Convert data to hexadecimal format separated by underscores
             data_bytes = []
             for i in range(0, len(can_data), 2):
                 if i + 1 < len(can_data):
@@ -441,30 +441,30 @@ class CanMonitorApp:
                         byte_val = int(byte_str, 16)
                         data_bytes.append(byte_str)
                     except ValueError:
-                        messagebox.showerror("Error", f"Valor de byte inválido: {byte_str}")
+                        messagebox.showerror("Error", f"Invalid byte value: {byte_str}")
                         return
             
-            # Formato de comando: SEND_ID_BYTE1_BYTE2_...
+            # Command format: SEND_ID_BYTE1_BYTE2_...
             cmd = f"SEND_{can_id}"
             for byte in data_bytes:
                 cmd += f"_{byte}"
             
             self.serial_port.write((cmd + "\n").encode('utf-8'))
-            # Color verde para mensajes enviados
-            self.rx_text.insert(tk.END, f"Enviando: {cmd}\n", "tx_msg")
+            # Green color for sent messages
+            self.rx_text.insert(tk.END, f"Sending: {cmd}\n", "tx_msg")
             self.rx_text.see(tk.END)
             
         except Exception as e:
-            messagebox.showerror("Error al enviar", str(e))
+            messagebox.showerror("Error Sending", str(e))
     
     def send_tp2_angle(self):
-        """Envía un mensaje con formato de ángulo TP2"""
+        """Sends a message with TP2 angle format"""
         if not self.is_connected:
-            messagebox.showwarning("No conectado", "Conecte primero al puerto serial")
+            messagebox.showwarning("Not Connected", "Connect to the serial port first")
             return
         
         try:
-            # Obtener grupo seleccionado para establecer el ID
+            # Get selected group to set the ID
             group_id = int(self.group_combo.get())
             angle_type = self.angle_type.get()
             angle_value = self.angle_value.get()
@@ -472,88 +472,88 @@ class CanMonitorApp:
             try:
                 val = int(angle_value)
                 if val < -179 or val > 180:
-                    raise ValueError("El ángulo debe estar entre -179 y 180")
+                    raise ValueError("Angle must be between -179 and 180")
             except ValueError:
-                messagebox.showerror("Error", "Valor de ángulo inválido")
+                messagebox.showerror("Error", "Invalid angle value")
                 return
             
-            # Formato: SEND_ID_TYPE_VALUES (convertido a hexadecimal)
+            # Format: SEND_ID_TYPE_VALUES (converted to hexadecimal)
             can_id = f"{0x100 + group_id:x}"
             
-            # Convertir tipo de ángulo y valor a bytes hexadecimales
+            # Convert angle type and value to hexadecimal bytes
             data_bytes = []
             
-            # Primer byte: tipo de ángulo (R, C, O)
+            # First byte: angle type (R, C, O)
             data_bytes.append(f"{ord(angle_type):02x}")
             
-            # Bytes siguientes: valor del ángulo como caracteres ASCII
+            # Next bytes: angle value as ASCII characters
             for char in angle_value:
                 data_bytes.append(f"{ord(char):02x}")
             
-            # Construir comando CAN
+            # Build CAN command
             cmd = f"SEND_{can_id}"
             for byte in data_bytes:
                 cmd += f"_{byte}"
             
             self.serial_port.write((cmd + "\n").encode('utf-8'))
-            # Color verde para mensajes enviados
-            self.rx_text.insert(tk.END, f"Enviando ángulo TP2 (Grupo {group_id}): {angle_type}={angle_value}°\n", "tx_msg")
+            # Green color for sent messages
+            self.rx_text.insert(tk.END, f"Sending TP2 angle (Group {group_id}): {angle_type}={angle_value}°\n", "tx_msg")
             self.rx_text.see(tk.END)
             
         except Exception as e:
-            messagebox.showerror("Error al enviar ángulo", str(e))
+            messagebox.showerror("Error Sending Angle", str(e))
     
     def set_can_mode(self, mode):
-        """Cambia el modo del controlador CAN"""
+        """Changes the CAN controller mode"""
         if not self.is_connected:
-            messagebox.showwarning("No conectado", "Conecte primero al puerto serial")
+            messagebox.showwarning("Not Connected", "Connect to the serial port first")
             return
         
         try:
             cmd = f"MODE_{mode}"
             self.serial_port.write((cmd + "\n").encode('utf-8'))
-            # Color verde para mensajes enviados
-            self.rx_text.insert(tk.END, f"Cambiando a modo CAN: {mode}\n", "tx_msg")
+            # Green color for sent messages
+            self.rx_text.insert(tk.END, f"Changing CAN mode: {mode}\n", "tx_msg")
             self.rx_text.see(tk.END)
         except Exception as e:
-            messagebox.showerror("Error al cambiar modo", str(e))
+            messagebox.showerror("Error Changing Mode", str(e))
     
     def start_timestamp_updates(self):
-        """Inicia la actualización periódica de timestamps en la tabla"""
+        """Starts periodic timestamp updates in the table"""
         self.update_timestamps()
         self.update_timer = self.root.after(1000, self.start_timestamp_updates)
     
     def stop_timestamp_updates(self):
-        """Detiene la actualización periódica de timestamps"""
+        """Stops periodic timestamp updates"""
         if self.update_timer:
             self.root.after_cancel(self.update_timer)
             self.update_timer = None
     
     def update_timestamps(self):
-        """Actualiza los tiempos mostrados en la tabla desde la última actualización"""
+        """Updates the times displayed in the table since the last update"""
         now = datetime.now()
         
         for group_id in range(8):
             if group_id in self.last_update_times:
                 timestamps = self.last_update_times[group_id]
                 
-                # Obtener el elemento correspondiente en la tabla
+                # Get the corresponding item in the table
                 item_id = self.tp2_tree.get_children()[group_id]
                 current_values = self.tp2_tree.item(item_id, 'values')
                 new_values = list(current_values)
                 
-                # Variables para controlar el estado visual de cada valor
+                # Variables to control the visual state of each value
                 r_stale = True
                 c_stale = True
                 o_stale = True
                 all_stale = True
                 
-                # Actualizar tiempos para cada tipo de ángulo
+                # Update times for each angle type
                 for angle_type, timestamp in timestamps.items():
                     if timestamp is None:
-                        continue  # No hay actualización registrada
+                        continue  # No update recorded
                     
-                    # Calcular tiempo transcurrido
+                    # Calculate elapsed time
                     elapsed = now - timestamp
                     elapsed_seconds = int(elapsed.total_seconds())
                     
@@ -565,10 +565,10 @@ class CanMonitorApp:
                     else:
                         time_str = f"{elapsed_seconds // 3600}h {(elapsed_seconds % 3600) // 60}m"
                     
-                    # Determinar si el valor está desactualizado (más de 2 segundos)
+                    # Determine if the value is outdated (more than 2 seconds)
                     is_stale = elapsed_seconds > 2
                     
-                    # Actualizar el campo correspondiente
+                    # Update the corresponding field
                     if angle_type == 'R':
                         new_values[2] = time_str
                         r_stale = is_stale
@@ -582,20 +582,20 @@ class CanMonitorApp:
                         new_values[7] = time_str
                         all_stale = is_stale
                 
-                # Actualizar los valores en la tabla
+                # Update the values in the table
                 self.tp2_tree.item(item_id, values=tuple(new_values))
                 
-                # Aplicar el tag correspondiente a la fila según el estado de actualización
+                # Apply the corresponding tag to the row based on the update state
                 if all_stale:
                     self.tp2_tree.item(item_id, tags=('stale',))
                 else:
                     self.tp2_tree.item(item_id, tags=('active',))
     
     def reset_tp2_data(self):
-        """Restablece todos los datos de TP2 a su estado inicial"""
+        """Resets all TP2 data to its initial state"""
         for i in range(8):
             item_id = self.tp2_tree.get_children()[i]
-            self.tp2_tree.item(item_id, values=(i, '--', 'Nunca', '--', 'Nunca', '--', 'Nunca', 'Nunca'), tags=('stale',))
+            self.tp2_tree.item(item_id, values=(i, '--', 'Never', '--', 'Never', '--', 'Never', 'Never'), tags=('stale',))
             self.last_update_times[i] = {
                 'R': None,
                 'C': None,
