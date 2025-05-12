@@ -86,21 +86,49 @@ class CanMonitorApp:
         self.group_combo.current(0)
         self.group_combo.bind("<<ComboboxSelected>>", self.on_group_selected)
         
+        # Input method selection
+        self.input_method = tk.StringVar(value="numeric")
+        ttk.Label(presets_frame, text="Input Method:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Radiobutton(presets_frame, text="Numeric", variable=self.input_method, 
+                        value="numeric", command=self.toggle_input_method).grid(row=1, column=1)
+        ttk.Radiobutton(presets_frame, text="String Format", variable=self.input_method, 
+                        value="string", command=self.toggle_input_method).grid(row=1, column=2, columnspan=2)
+        
+        # === Numeric Input (existing) ===
+        self.numeric_frame = ttk.Frame(presets_frame)
+        self.numeric_frame.grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=5)
+        
         # Angle type
-        ttk.Label(presets_frame, text="Type:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.numeric_frame, text="Type:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         self.angle_type = tk.StringVar(value="R")
-        ttk.Radiobutton(presets_frame, text="Roll (R)", variable=self.angle_type, value="R").grid(row=1, column=1)
-        ttk.Radiobutton(presets_frame, text="Pitch (C)", variable=self.angle_type, value="C").grid(row=1, column=2)
-        ttk.Radiobutton(presets_frame, text="Orientation (O)", variable=self.angle_type, value="O").grid(row=1, column=3)
+        ttk.Radiobutton(self.numeric_frame, text="Roll (R)", variable=self.angle_type, value="R").grid(row=0, column=1)
+        ttk.Radiobutton(self.numeric_frame, text="Pitch (C)", variable=self.angle_type, value="C").grid(row=0, column=2)
+        ttk.Radiobutton(self.numeric_frame, text="Orientation (O)", variable=self.angle_type, value="O").grid(row=0, column=3)
         
         # Angle value
-        ttk.Label(presets_frame, text="Angle:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-        self.angle_value = ttk.Spinbox(presets_frame, from_=-179, to=180, width=5)
-        self.angle_value.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.numeric_frame, text="Angle:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.angle_value = ttk.Spinbox(self.numeric_frame, from_=-179, to=180, width=5)
+        self.angle_value.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
         self.angle_value.set("0")
         
+        # === String Format Input (new) ===
+        self.string_frame = ttk.Frame(presets_frame)
+        self.string_frame.grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=5)
+        
+        ttk.Label(self.string_frame, text="Angle String:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.angle_string = ttk.Entry(self.string_frame, width=10)
+        self.angle_string.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
+        
+        ttk.Label(self.string_frame, 
+                 text="Format: R|C|O followed by angle value\nExamples: R-34, C0, O67, R+138").grid(
+                 row=0, column=2, rowspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Send button (shared)
         self.send_preset_btn = ttk.Button(presets_frame, text="Send Angle", command=self.send_tp2_angle)
-        self.send_preset_btn.grid(row=2, column=3, sticky=tk.W, padx=5, pady=5)
+        self.send_preset_btn.grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
+        # Initially hide the string input frame
+        self.string_frame.grid_remove()
         
         # CAN Mode
         mode_frame = ttk.LabelFrame(left_frame, text="CAN Mode", padding=10)
@@ -177,6 +205,15 @@ class CanMonitorApp:
                 'any': None
             }
 
+    def toggle_input_method(self):
+        """Toggles between numeric and string input methods"""
+        if self.input_method.get() == "numeric":
+            self.string_frame.grid_remove()
+            self.numeric_frame.grid()
+        else:
+            self.numeric_frame.grid_remove()
+            self.string_frame.grid()
+    
     def on_port_selected(self, event):
         """Displays detailed information about the selected port"""
         selected = self.port_combo.get()
@@ -466,29 +503,51 @@ class CanMonitorApp:
         try:
             # Get selected group to set the ID
             group_id = int(self.group_combo.get())
-            angle_type = self.angle_type.get()
-            angle_value = self.angle_value.get()
-            
-            try:
-                val = int(angle_value)
-                if val < -179 or val > 180:
-                    raise ValueError("Angle must be between -179 and 180")
-            except ValueError:
-                messagebox.showerror("Error", "Invalid angle value")
-                return
-            
-            # Format: SEND_ID_TYPE_VALUES (converted to hexadecimal)
             can_id = f"{0x100 + group_id:x}"
             
-            # Convert angle type and value to hexadecimal bytes
-            data_bytes = []
-            
-            # First byte: angle type (R, C, O)
-            data_bytes.append(f"{ord(angle_type):02x}")
-            
-            # Next bytes: angle value as ASCII characters
-            for char in angle_value:
-                data_bytes.append(f"{ord(char):02x}")
+            # Handle based on selected input method
+            if self.input_method.get() == "numeric":
+                # Original numerical input handling
+                angle_type = self.angle_type.get()
+                angle_value = self.angle_value.get()
+                
+                try:
+                    val = int(angle_value)
+                    if val < -179 or val > 180:
+                        raise ValueError("Angle must be between -179 and 180")
+                except ValueError:
+                    messagebox.showerror("Error", "Invalid angle value")
+                    return
+                
+                # Convert angle type and value to hexadecimal bytes
+                data_bytes = []
+                
+                # First byte: angle type (R, C, O)
+                data_bytes.append(f"{ord(angle_type):02x}")
+                
+                # Next bytes: angle value as ASCII characters
+                for char in angle_value:
+                    data_bytes.append(f"{ord(char):02x}")
+                
+                display_msg = f"Sending TP2 angle (Group {group_id}): {angle_type}={angle_value}°"
+                
+            else:
+                # New string format input handling
+                angle_string = self.angle_string.get().strip()
+                
+                # Validate the angle string
+                if not self.validate_angle_string(angle_string):
+                    messagebox.showerror("Error", "Invalid angle string format.\n"
+                                         "Format should be R|C|O followed by 1-4 digits.\n"
+                                         "Examples: R-34, C0, O67, R+138")
+                    return
+                
+                # Convert the entire string to hex bytes
+                data_bytes = []
+                for char in angle_string:
+                    data_bytes.append(f"{ord(char):02x}")
+                
+                display_msg = f"Sending TP2 angle string (Group {group_id}): {angle_string}"
             
             # Build CAN command
             cmd = f"SEND_{can_id}"
@@ -497,11 +556,36 @@ class CanMonitorApp:
             
             self.serial_port.write((cmd + "\n").encode('utf-8'))
             # Green color for sent messages
-            self.rx_text.insert(tk.END, f"Sending TP2 angle (Group {group_id}): {angle_type}={angle_value}°\n", "tx_msg")
+            self.rx_text.insert(tk.END, f"{display_msg}\n", "tx_msg")
             self.rx_text.see(tk.END)
             
         except Exception as e:
             messagebox.showerror("Error Sending Angle", str(e))
+    
+    def validate_angle_string(self, angle_string):
+        """Validates if the provided string follows the angle string format"""
+        if not angle_string or len(angle_string) < 2 or len(angle_string) > 5:
+            return False
+        
+        # First character must be one of R, C, or O
+        if angle_string[0] not in ['R', 'C', 'O']:
+            return False
+        
+        # Rest of the string must form a valid angle value (1-4 characters)
+        value_part = angle_string[1:]
+        
+        # Check if it starts with a sign (optional)
+        if value_part.startswith('+') or value_part.startswith('-'):
+            value_part = value_part[1:]  # Remove the sign
+            if not value_part:  # If there's nothing after the sign
+                return False
+        
+        # Remaining characters should be digits
+        if not value_part.isdigit():
+            return False
+        
+        # Valid string format
+        return True
     
     def set_can_mode(self, mode):
         """Changes the CAN controller mode"""
