@@ -18,13 +18,14 @@ import matplotlib.animation as animation
 import numpy as np
 
 class ScrollableFrame(ttk.Frame):
-    """Un marco con capacidad de desplazamiento vertical."""
+    """Un marco con capacidad de desplazamiento vertical y horizontal."""
     def __init__(self, container, *args, **kwargs):
         super().__init__(container, *args, **kwargs)
         
-        # Crear un canvas y una barra de desplazamiento
+        # Crear un canvas y barras de desplazamiento
         self.canvas = tk.Canvas(self)
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollbar_v = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollbar_h = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
         self.scrollable_frame = ttk.Frame(self.canvas)
 
         # Configurar el canvas para que responda al tamaño del frame interior
@@ -36,29 +37,43 @@ class ScrollableFrame(ttk.Frame):
         # Crear una ventana dentro del canvas para contener el frame
         self.canvas_frame = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         
-        # Configurar el canvas para responder a la barra de desplazamiento
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        # Configurar el canvas para responder a las barras de desplazamiento
+        self.canvas.configure(yscrollcommand=self.scrollbar_v.set, xscrollcommand=self.scrollbar_h.set)
         
         # Hacer que el canvas cambie de tamaño con la ventana
         self.canvas.bind("<Configure>", self.resize_canvas_frame)
         
         # Colocar los elementos
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar_v.grid(row=0, column=1, sticky="ns")
+        self.scrollbar_h.grid(row=1, column=0, sticky="ew")
+        
+        # Configurar el grid para expandirse
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
         
         # Vincular eventos de desplazamiento del mouse
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind_all("<Shift-MouseWheel>", self._on_shift_mousewheel)  # Horizontal scroll with Shift
         # Para Linux (donde el evento de scroll es diferente)
         self.canvas.bind_all("<Button-4>", self._on_linux_scroll_up)
         self.canvas.bind_all("<Button-5>", self._on_linux_scroll_down)
+        self.canvas.bind_all("<Shift-Button-4>", self._on_linux_horizontal_scroll_left)
+        self.canvas.bind_all("<Shift-Button-5>", self._on_linux_horizontal_scroll_right)
 
     def resize_canvas_frame(self, event):
         """Redimensionar el marco interior cuando cambia el tamaño del canvas"""
-        self.canvas.itemconfig(self.canvas_frame, width=event.width)
+        # Ya no fijamos el ancho para permitir contenido más ancho que el canvas
+        # self.canvas.itemconfig(self.canvas_frame, width=event.width)
+        pass
     
     def _on_mousewheel(self, event):
-        """Para Windows/macOS"""
+        """Para Windows/macOS - desplazamiento vertical"""
         self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    
+    def _on_shift_mousewheel(self, event):
+        """Para Windows/macOS - desplazamiento horizontal con Shift"""
+        self.canvas.xview_scroll(int(-1*(event.delta/120)), "units")
 
     def _on_linux_scroll_up(self, event):
         """Scroll hacia arriba en Linux"""
@@ -67,6 +82,14 @@ class ScrollableFrame(ttk.Frame):
     def _on_linux_scroll_down(self, event):
         """Scroll hacia abajo en Linux"""
         self.canvas.yview_scroll(1, "units")
+        
+    def _on_linux_horizontal_scroll_left(self, event):
+        """Scroll horizontal a la izquierda en Linux"""
+        self.canvas.xview_scroll(-1, "units")
+        
+    def _on_linux_horizontal_scroll_right(self, event):
+        """Scroll horizontal a la derecha en Linux"""
+        self.canvas.xview_scroll(1, "units")
 
 class PlotWindow:
     def __init__(self, parent, data_source):
@@ -302,14 +325,21 @@ class CanMonitorApp:
         left_scroll.pack(fill=tk.BOTH, expand=True)
         left_frame = left_scroll.scrollable_frame
         
-        # === RIGHT COLUMN con ScrollableFrame ===
+        # === RIGHT COLUMN con PanedWindow para distribución 70/30 ===
         right_container = ttk.LabelFrame(main_frame, text="CAN Messages", padding=10)
         right_container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        # Crear un marco con desplazamiento para la columna derecha
-        right_scroll = ScrollableFrame(right_container)
-        right_scroll.pack(fill=tk.BOTH, expand=True)
-        right_frame = right_scroll.scrollable_frame
+        # Crear un PanedWindow vertical para dividir la columna derecha
+        right_paned = ttk.PanedWindow(right_container, orient=tk.VERTICAL)
+        right_paned.pack(fill=tk.BOTH, expand=True)
+        
+        # Panel superior (70%) - Mensajes CAN recibidos
+        top_panel = ttk.Frame(right_paned)
+        right_paned.add(top_panel, weight=70)
+        
+        # Panel inferior (30%) - Tabla de interpretación y gráfico
+        bottom_panel = ttk.Frame(right_paned)
+        right_paned.add(bottom_panel, weight=30)
         
         # Serial connection section
         conn_frame = ttk.Frame(left_frame)
@@ -501,18 +531,9 @@ class CanMonitorApp:
         ttk.Separator(random_frame, orient=tk.HORIZONTAL).grid(
             row=5, column=0, columnspan=3, sticky=tk.EW, pady=10)
         
-        # # Information about timing rules
-        # timing_text = ("Timing rules:\n"
-        #               "• Max 20 packets/second per group\n"
-        #               "• Send immediately if angle changes ≥5°\n"
-        #               "• Send at least every 2 seconds\n"
-        #               "• Roll, pitch and orientation treated independently")
-        # ttk.Label(random_frame, text=timing_text, justify=tk.LEFT).grid(
-        #     row=6, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
-        
-        # === RIGHT COLUMN ===
+        # === TOP PANEL OF RIGHT COLUMN (70%) ===
         # Search frame for message filtering
-        search_frame = ttk.Frame(right_frame)
+        search_frame = ttk.Frame(top_panel)
         search_frame.pack(fill=tk.X, pady=5)
         
         ttk.Label(search_frame, text="Search:").pack(side=tk.LEFT, padx=5)
@@ -533,7 +554,7 @@ class CanMonitorApp:
         self.match_label.pack(side=tk.LEFT, padx=5)
         
         # Area to display received messages
-        self.rx_text = scrolledtext.ScrolledText(right_frame, width=50, height=20)
+        self.rx_text = scrolledtext.ScrolledText(top_panel, width=50, height=20)
         self.rx_text.pack(fill=tk.BOTH, expand=True, pady=5)
         
         # Configure colors for messages
@@ -555,7 +576,7 @@ class CanMonitorApp:
         self.rx_text.bind("<Button-3>", self.show_context_menu)
         
         # Buttons to clear and enable/disable autoscroll
-        btn_frame = ttk.Frame(right_frame)
+        btn_frame = ttk.Frame(top_panel)
         btn_frame.pack(fill=tk.X, pady=5)
         
         self.clear_btn = ttk.Button(btn_frame, text="Clear", command=lambda: self.rx_text.delete(1.0, tk.END))
@@ -567,9 +588,10 @@ class CanMonitorApp:
             btn_frame, text="Autoscroll", variable=self.autoscroll_var)
         self.autoscroll_check.pack(side=tk.LEFT, padx=5)
         
+        # === BOTTOM PANEL OF RIGHT COLUMN (30%) ===
         # Area for interpreted TP2 messages
-        tp2_frame = ttk.LabelFrame(right_frame, text="Interpreted TP2 Messages", padding=10)
-        tp2_frame.pack(fill=tk.X, pady=10)
+        tp2_frame = ttk.LabelFrame(bottom_panel, text="Interpreted TP2 Messages", padding=5)
+        tp2_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
         # Table to display angles
         columns = ('group', 'roll', 'roll_time', 'pitch', 'pitch_time', 'orientation', 'orientation_time', 'last_update')
@@ -612,11 +634,11 @@ class CanMonitorApp:
             }
         
         # Button to open plotting window in the TP2 section
-        plotting_frame = ttk.LabelFrame(right_frame, text="Real-time Plotting", padding=10)
-        plotting_frame.pack(fill=tk.X, pady=10)
+        plotting_frame = ttk.LabelFrame(bottom_panel, text="Real-time Plotting", padding=5)
+        plotting_frame.pack(fill=tk.X, pady=2)
         self.open_plot_btn = ttk.Button(plotting_frame, text="Open Plot Window", 
                                         command=self.open_plot_window)
-        self.open_plot_btn.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.open_plot_btn.pack(fill=tk.X, padx=5, pady=5)
 
     def format_timestamp(self):
         """Returns a formatted timestamp string for the current time"""
