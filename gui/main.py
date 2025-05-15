@@ -432,14 +432,14 @@ class CanMonitorApp:
         ttk.Separator(random_frame, orient=tk.HORIZONTAL).grid(
             row=5, column=0, columnspan=3, sticky=tk.EW, pady=10)
         
-        # Information about timing rules
-        timing_text = ("Timing rules:\n"
-                      "• Max 20 packets/second per group\n"
-                      "• Send immediately if angle changes ≥5°\n"
-                      "• Send at least every 2 seconds\n"
-                      "• Roll, pitch and orientation treated independently")
-        ttk.Label(random_frame, text=timing_text, justify=tk.LEFT).grid(
-            row=6, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+        # # Information about timing rules
+        # timing_text = ("Timing rules:\n"
+        #               "• Max 20 packets/second per group\n"
+        #               "• Send immediately if angle changes ≥5°\n"
+        #               "• Send at least every 2 seconds\n"
+        #               "• Roll, pitch and orientation treated independently")
+        # ttk.Label(random_frame, text=timing_text, justify=tk.LEFT).grid(
+        #     row=6, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
         
         # === RIGHT COLUMN ===
         right_frame = ttk.LabelFrame(main_frame, text="CAN Messages", padding=10)
@@ -728,7 +728,6 @@ class CanMonitorApp:
     def random_transmission_loop_multi(self, group_ids):
         """Thread function to send random angle values for multiple groups with TP2 timing rules"""
         angle_types = ['R', 'C', 'O']
-        last_global_send = {g: 0 for g in group_ids}
         next_angle_index = {g: 0 for g in group_ids}
         while self.random_transmission_active and self.is_connected:
             now = time.time()
@@ -762,8 +761,8 @@ class CanMonitorApp:
                 elif now - last_sent >= 2.0:
                     should_send = True
                     reason = "2s timeout"
-                # Max 20 packets/sec per group, so 0.050s (hardcoded to 5 packets/sec, so 0.200s)
-                if should_send and (now - last_global_send[group_id]) >= 0.200:
+                # Max 5 packets/sec per group per angle type (0.500s)
+                if should_send and (now - last_sent) >= 0.500:
                     can_id = f"{0x100 + group_id:x}"
                     angle_string = f"{angle_type}{new_value}"
                     data_bytes = [f"{ord(c):02x}" for c in angle_string]
@@ -774,7 +773,6 @@ class CanMonitorApp:
                         self.root.after(0, lambda t=status_text: self.random_status.config(text=t))
                         state['last_sent_time'][angle_type] = now
                         state['last_values'][angle_type] = new_value
-                        last_global_send[group_id] = now
                         msg = f"Random: Sent {angle_type}={new_value}° for Group {group_id} ({reason}, {mode})"
                         timestamp = self.format_timestamp()
                         self.root.after(0, lambda t=timestamp, m=msg: self.rx_text.insert(tk.END, f"{t} ", "timestamp"))
