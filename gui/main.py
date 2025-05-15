@@ -17,11 +17,62 @@ from matplotlib.figure import Figure
 import matplotlib.animation as animation
 import numpy as np
 
+class ScrollableFrame(ttk.Frame):
+    """Un marco con capacidad de desplazamiento vertical."""
+    def __init__(self, container, *args, **kwargs):
+        super().__init__(container, *args, **kwargs)
+        
+        # Crear un canvas y una barra de desplazamiento
+        self.canvas = tk.Canvas(self)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = ttk.Frame(self.canvas)
+
+        # Configurar el canvas para que responda al tamaño del frame interior
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+
+        # Crear una ventana dentro del canvas para contener el frame
+        self.canvas_frame = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        
+        # Configurar el canvas para responder a la barra de desplazamiento
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        # Hacer que el canvas cambie de tamaño con la ventana
+        self.canvas.bind("<Configure>", self.resize_canvas_frame)
+        
+        # Colocar los elementos
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        
+        # Vincular eventos de desplazamiento del mouse
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        # Para Linux (donde el evento de scroll es diferente)
+        self.canvas.bind_all("<Button-4>", self._on_linux_scroll_up)
+        self.canvas.bind_all("<Button-5>", self._on_linux_scroll_down)
+
+    def resize_canvas_frame(self, event):
+        """Redimensionar el marco interior cuando cambia el tamaño del canvas"""
+        self.canvas.itemconfig(self.canvas_frame, width=event.width)
+    
+    def _on_mousewheel(self, event):
+        """Para Windows/macOS"""
+        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+    def _on_linux_scroll_up(self, event):
+        """Scroll hacia arriba en Linux"""
+        self.canvas.yview_scroll(-1, "units")
+
+    def _on_linux_scroll_down(self, event):
+        """Scroll hacia abajo en Linux"""
+        self.canvas.yview_scroll(1, "units")
+
 class PlotWindow:
     def __init__(self, parent, data_source):
         self.window = tk.Toplevel(parent)
         self.window.title("Real-time Angle Data Plot")
-        self.window.geometry("1100x800")
+        self.window.geometry("1000x700")  # Tamaño más pequeño para pantallas de baja resolución
         self.data_source = data_source
         self.time_window = 30  # seconds
 
@@ -33,6 +84,10 @@ class PlotWindow:
             'O': [tk.BooleanVar(value=True) for _ in range(8)],
         }
 
+        # Usar un marco con desplazamiento para el contenido principal
+        self.main_frame = ScrollableFrame(self.window)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        
         self.setup_controls()
         self.setup_plots()
 
@@ -42,7 +97,7 @@ class PlotWindow:
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def setup_controls(self):
-        control_frame = ttk.Frame(self.window)
+        control_frame = ttk.Frame(self.main_frame.scrollable_frame)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
 
         # Group selection checkbuttons
@@ -100,7 +155,7 @@ class PlotWindow:
             ax.legend(loc='upper right', fontsize='small', ncol=4)
 
         self.fig.tight_layout()
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.window)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.main_frame.scrollable_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
@@ -238,9 +293,23 @@ class CanMonitorApp:
         main_frame = ttk.Frame(self.root, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # === LEFT COLUMN ===
-        left_frame = ttk.LabelFrame(main_frame, text="Connection and Control", padding=10)
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # === LEFT COLUMN con ScrollableFrame ===
+        left_container = ttk.LabelFrame(main_frame, text="Connection and Control", padding=10)
+        left_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Crear un marco con desplazamiento para la columna izquierda
+        left_scroll = ScrollableFrame(left_container)
+        left_scroll.pack(fill=tk.BOTH, expand=True)
+        left_frame = left_scroll.scrollable_frame
+        
+        # === RIGHT COLUMN con ScrollableFrame ===
+        right_container = ttk.LabelFrame(main_frame, text="CAN Messages", padding=10)
+        right_container.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # Crear un marco con desplazamiento para la columna derecha
+        right_scroll = ScrollableFrame(right_container)
+        right_scroll.pack(fill=tk.BOTH, expand=True)
+        right_frame = right_scroll.scrollable_frame
         
         # Serial connection section
         conn_frame = ttk.Frame(left_frame)
@@ -442,9 +511,6 @@ class CanMonitorApp:
         #     row=6, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
         
         # === RIGHT COLUMN ===
-        right_frame = ttk.LabelFrame(main_frame, text="CAN Messages", padding=10)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
         # Search frame for message filtering
         search_frame = ttk.Frame(right_frame)
         search_frame.pack(fill=tk.X, pady=5)
