@@ -1464,6 +1464,15 @@ class CanMonitorApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
+
+    try:
+        # Get the directory of the current script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(script_dir, "icon.ico")
+        root.iconbitmap(icon_path)
+    except Exception as e:
+        print(f"Could not set icon: {e}")
+
     app = CanMonitorApp(root)
     # Add window close handler
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
