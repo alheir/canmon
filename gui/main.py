@@ -18,136 +18,159 @@ import matplotlib.animation as animation
 import numpy as np
 
 class PlotWindow:
-    def __init__(self, parent, group_id, data_source):
+    def __init__(self, parent, data_source):
         self.window = tk.Toplevel(parent)
-        self.window.title(f"Group {group_id} - Angle Data Plot")
-        self.window.geometry("900x700")
-        self.group_id = group_id
+        self.window.title("Real-time Angle Data Plot")
+        self.window.geometry("1100x800")
         self.data_source = data_source
-        
-        # How many seconds of data to show
-        self.time_window = 30
-        
-        # Setup figures for plotting
+        self.time_window = 30  # seconds
+
+        # Group/magnitude selection state
+        self.group_vars = [tk.BooleanVar(value=True) for _ in range(8)]
+        self.magnitude_vars = {
+            'R': [tk.BooleanVar(value=True) for _ in range(8)],
+            'C': [tk.BooleanVar(value=True) for _ in range(8)],
+            'O': [tk.BooleanVar(value=True) for _ in range(8)],
+        }
+
+        self.setup_controls()
         self.setup_plots()
-        
-        # Start animation
+
         self.ani = animation.FuncAnimation(
-            self.fig, self.update_plots, interval=100,  # Update every 100ms
-            blit=False)
-        
+            self.fig, self.update_plots, interval=100, blit=False)
+
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
-        
+
+    def setup_controls(self):
+        control_frame = ttk.Frame(self.window)
+        control_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # Group selection checkbuttons
+        group_sel_frame = ttk.LabelFrame(control_frame, text="Groups")
+        group_sel_frame.pack(side=tk.LEFT, padx=5, pady=5)
+        for i in range(8):
+            ttk.Checkbutton(
+                group_sel_frame, text=f"G{i}", variable=self.group_vars[i],
+                command=self.on_group_toggle
+            ).grid(row=0, column=i, sticky=tk.W, padx=2)
+
+        # Magnitude selection per group
+        mag_sel_frame = ttk.LabelFrame(control_frame, text="Magnitudes")
+        mag_sel_frame.pack(side=tk.LEFT, padx=5, pady=5)
+        for i in range(8):
+            col = i
+            ttk.Label(mag_sel_frame, text=f"G{i}").grid(row=0, column=col)
+            for j, mag in enumerate(['R', 'C', 'O']):
+                ttk.Checkbutton(
+                    mag_sel_frame, text=mag, variable=self.magnitude_vars[mag][i],
+                    command=self.on_mag_toggle
+                ).grid(row=j+1, column=col, sticky=tk.W)
+
+        # Buttons to select/deselect all
+        btns_frame = ttk.Frame(control_frame)
+        btns_frame.pack(side=tk.LEFT, padx=10)
+        ttk.Button(btns_frame, text="All Groups", command=self.select_all_groups).pack(fill=tk.X)
+        ttk.Button(btns_frame, text="No Groups", command=self.deselect_all_groups).pack(fill=tk.X)
+        ttk.Button(btns_frame, text="All Magnitudes", command=self.select_all_mags).pack(fill=tk.X)
+        ttk.Button(btns_frame, text="No Magnitudes", command=self.deselect_all_mags).pack(fill=tk.X)
+
     def setup_plots(self):
-        self.fig = Figure(figsize=(9, 7), dpi=100)
-        
-        # Create three subplots for roll, pitch, and orientation
-        self.roll_plot = self.fig.add_subplot(311)
-        self.roll_plot.set_title("Roll")
-        self.roll_plot.set_ylabel("Degrees")
-        self.roll_plot.grid(True)
-        
-        self.pitch_plot = self.fig.add_subplot(312)
-        self.pitch_plot.set_title("Pitch")
-        self.pitch_plot.set_ylabel("Degrees")
-        self.pitch_plot.grid(True)
-        
-        self.orient_plot = self.fig.add_subplot(313)
-        self.orient_plot.set_title("Orientation")
-        self.orient_plot.set_ylabel("Degrees")
-        self.orient_plot.set_xlabel("Time (seconds)")
-        self.orient_plot.grid(True)
-        
-        # Initial empty lines
-        self.roll_line, = self.roll_plot.plot([], [], 'b-')
-        self.pitch_line, = self.pitch_plot.plot([], [], 'g-')
-        self.orient_line, = self.orient_plot.plot([], [], 'r-')
-        
-        # Common y-axis range for all plots
-        for plot in [self.roll_plot, self.pitch_plot, self.orient_plot]:
-            plot.set_ylim(-180, 180)
-            plot.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-        
+        self.fig = Figure(figsize=(10, 7), dpi=100)
+        self.axes = {}
+        self.lines = {}
+        mag_titles = {'R': 'Roll', 'C': 'Pitch', 'O': 'Orientation'}
+        colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', '#ff8800']
+
+        # One subplot per magnitude
+        for idx, mag in enumerate(['R', 'C', 'O']):
+            ax = self.fig.add_subplot(3, 1, idx+1)
+            ax.set_title(mag_titles[mag])
+            ax.set_ylabel("Degrees")
+            ax.set_ylim(-180, 180)
+            ax.grid(True)
+            ax.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+            if mag == 'O':
+                ax.set_xlabel("Time (seconds)")
+            self.axes[mag] = ax
+            self.lines[mag] = {}
+            for group in range(8):
+                # Each group gets a line per magnitude, now with dots
+                line, = ax.plot([], [], color=colors[group % len(colors)], label=f"G{group}", marker='o')
+                self.lines[mag][group] = line
+            ax.legend(loc='upper right', fontsize='small', ncol=4)
+
         self.fig.tight_layout()
-        
-        # Add the plot to the window
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.window)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        
-        # For toggling plot visibility
-        self.visible_plots = {'roll': True, 'pitch': True, 'orientation': True}
-        
-        # Add controls for toggling plots
-        self.control_frame = ttk.Frame(self.window)
-        self.control_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Checkbuttons to toggle plot visibility
-        self.roll_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self.control_frame, text="Show Roll", 
-                       variable=self.roll_var, 
-                       command=lambda: self.toggle_plot('roll')).pack(side=tk.LEFT, padx=5)
-        
-        self.pitch_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self.control_frame, text="Show Pitch", 
-                        variable=self.pitch_var, 
-                        command=lambda: self.toggle_plot('pitch')).pack(side=tk.LEFT, padx=5)
-        
-        self.orient_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self.control_frame, text="Show Orientation", 
-                        variable=self.orient_var, 
-                        command=lambda: self.toggle_plot('orientation')).pack(side=tk.LEFT, padx=5)
-        
-    def toggle_plot(self, plot_name):
-        if plot_name == 'roll':
-            self.visible_plots['roll'] = self.roll_var.get()
-        elif plot_name == 'pitch':
-            self.visible_plots['pitch'] = self.pitch_var.get()
-        elif plot_name == 'orientation':
-            self.visible_plots['orientation'] = self.orient_var.get()
-    
+
+    def on_group_toggle(self):
+        # If a group is disabled, also disable its magnitudes
+        for i in range(8):
+            if not self.group_vars[i].get():
+                for mag in ['R', 'C', 'O']:
+                    self.magnitude_vars[mag][i].set(False)
+        self.canvas.draw_idle()
+
+    def on_mag_toggle(self):
+        # If any magnitude for a group is enabled, enable the group
+        for i in range(8):
+            if any(self.magnitude_vars[mag][i].get() for mag in ['R', 'C', 'O']):
+                self.group_vars[i].set(True)
+        self.canvas.draw_idle()
+
+    def select_all_groups(self):
+        for var in self.group_vars:
+            var.set(True)
+        for mag in ['R', 'C', 'O']:
+            for var in self.magnitude_vars[mag]:
+                var.set(True)
+        self.canvas.draw_idle()
+
+    def deselect_all_groups(self):
+        for var in self.group_vars:
+            var.set(False)
+        for mag in ['R', 'C', 'O']:
+            for var in self.magnitude_vars[mag]:
+                var.set(False)
+        self.canvas.draw_idle()
+
+    def select_all_mags(self):
+        for mag in ['R', 'C', 'O']:
+            for var in self.magnitude_vars[mag]:
+                var.set(True)
+        for i in range(8):
+            if any(self.magnitude_vars[mag][i].get() for mag in ['R', 'C', 'O']):
+                self.group_vars[i].set(True)
+        self.canvas.draw_idle()
+
+    def deselect_all_mags(self):
+        for mag in ['R', 'C', 'O']:
+            for var in self.magnitude_vars[mag]:
+                var.set(False)
+        self.canvas.draw_idle()
+
     def update_plots(self, frame):
-        # Get data for this group
-        data = self.data_source.get_plot_data(self.group_id)
-        
-        # Current time for reference
         now = time.time()
-        
-        # Filter data to show only the last time_window seconds
-        roll_data = [(t, v) for t, v in data['R'] if now - t <= self.time_window]
-        pitch_data = [(t, v) for t, v in data['C'] if now - t <= self.time_window]
-        orient_data = [(t, v) for t, v in data['O'] if now - t <= self.time_window]
-        
-        # Update each plot
-        if roll_data and self.visible_plots['roll']:
-            times, values = zip(*roll_data) if roll_data else ([], [])
-            # Convert absolute timestamps to seconds ago
-            rel_times = [now - t for t in times]
-            self.roll_line.set_data(rel_times, values)
-            self.roll_plot.set_xlim(self.time_window, 0)  # Reversed x-axis (newest data on right)
-        else:
-            self.roll_line.set_data([], [])
-            
-        if pitch_data and self.visible_plots['pitch']:
-            times, values = zip(*pitch_data) if pitch_data else ([], [])
-            rel_times = [now - t for t in times]
-            self.pitch_line.set_data(rel_times, values)
-            self.pitch_plot.set_xlim(self.time_window, 0)
-        else:
-            self.pitch_line.set_data([], [])
-            
-        if orient_data and self.visible_plots['orientation']:
-            times, values = zip(*orient_data) if orient_data else ([], [])
-            rel_times = [now - t for t in times]
-            self.orient_line.set_data(rel_times, values)
-            self.orient_plot.set_xlim(self.time_window, 0)
-        else:
-            self.orient_line.set_data([], [])
-        
-        return self.roll_line, self.pitch_line, self.orient_line
-    
+        for mag in ['R', 'C', 'O']:
+            ax = self.axes[mag]
+            for group in range(8):
+                line = self.lines[mag][group]
+                if self.group_vars[group].get() and self.magnitude_vars[mag][group].get():
+                    data = self.data_source.get_plot_data(group)[mag]
+                    filtered = [(t, v) for t, v in data if now - t <= self.time_window]
+                    if filtered:
+                        times, values = zip(*filtered)
+                        rel_times = [now - t for t in times]
+                        line.set_data(rel_times, values)
+                        ax.set_xlim(self.time_window, 0)
+                    else:
+                        line.set_data([], [])
+                else:
+                    line.set_data([], [])
+        return [self.lines[mag][g] for mag in ['R', 'C', 'O'] for g in range(8)]
+
     def on_close(self):
-        # Stop the animation when window is closed
         self.ani.event_source.stop()
         self.window.destroy()
 
@@ -186,8 +209,8 @@ class CanMonitorApp:
                 'O': deque(maxlen=500)
             }
         
-        # Reference to plot windows
-        self.plot_windows = {}
+        # Reference to plot window
+        self.plot_window = None
         
         # Variables for random transmission
         self.random_transmission_active = False
@@ -504,15 +527,9 @@ class CanMonitorApp:
         # Button to open plotting window in the TP2 section
         plotting_frame = ttk.LabelFrame(right_frame, text="Real-time Plotting", padding=10)
         plotting_frame.pack(fill=tk.X, pady=10)
-        
-        ttk.Label(plotting_frame, text="Select Group:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.plot_group_combo = ttk.Combobox(plotting_frame, width=5, values=[f"{i}" for i in range(8)])
-        self.plot_group_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
-        self.plot_group_combo.current(0)
-        
         self.open_plot_btn = ttk.Button(plotting_frame, text="Open Plot Window", 
                                         command=self.open_plot_window)
-        self.open_plot_btn.grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
+        self.open_plot_btn.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
 
     def format_timestamp(self):
         """Returns a formatted timestamp string for the current time"""
@@ -805,10 +822,9 @@ class CanMonitorApp:
         if self.is_connected:
             self.toggle_connection()
         
-        # Close plot windows
-        for window in self.plot_windows.values():
-            if hasattr(window, 'window') and window.window.winfo_exists():
-                window.window.destroy()
+        # Close plot window
+        if self.plot_window and hasattr(self.plot_window, 'window') and self.plot_window.window.winfo_exists():
+            self.plot_window.window.destroy()
         
         # Close main window
         self.root.destroy()
@@ -1348,18 +1364,12 @@ class CanMonitorApp:
                     self.plot_data[i][angle_type].clear()
 
     def open_plot_window(self):
-        """Opens a new window with real-time plots for the selected group"""
+        """Opens the single real-time plot window (all groups/magnitudes)"""
         try:
-            group_id = int(self.plot_group_combo.get())
-            
-            # If a window already exists for this group, bring it to front
-            if group_id in self.plot_windows and self.plot_windows[group_id].window.winfo_exists():
-                self.plot_windows[group_id].window.lift()
+            if self.plot_window and self.plot_window.window.winfo_exists():
+                self.plot_window.window.lift()
                 return
-            
-            # Create a new plot window
-            self.plot_windows[group_id] = PlotWindow(self.root, group_id, self)
-            
+            self.plot_window = PlotWindow(self.root, self)
         except Exception as e:
             messagebox.showerror("Plot Error", str(e))
 
