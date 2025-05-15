@@ -23,7 +23,7 @@ bool stringComplete = false;
 MCP_CAN CAN0(10);  // Set CS to pin 10
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(921600);
   
   // Initialize MCP2515 running at 8MHz with a baudrate of 125kb/s as used in TP2
   if (CAN0.begin(MCP_ANY, CAN_125KBPS, MCP_8MHZ) == CAN_OK) {

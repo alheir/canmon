@@ -903,7 +903,7 @@ class CanMonitorApp:
                 port = device
                 
             try:
-                self.serial_port = serial.Serial(port, 115200, timeout=1)
+                self.serial_port = serial.Serial(port, 921600, timeout=1)
                 self.is_connected = True
                 self.connect_btn['text'] = "Disconnect"
                 self.should_read = True
