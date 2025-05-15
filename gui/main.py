@@ -215,8 +215,6 @@ class CanMonitorApp:
         # Variables for random transmission
         self.random_transmission_active = False
         self.random_transmission_thread = None
-        self.random_last_values = {'R': 0, 'C': 0, 'O': 0}
-        self.random_last_sent_time = {'R': 0, 'C': 0, 'O': 0}
         
         # Variables for search functionality
         self.search_term = ""
@@ -375,50 +373,73 @@ class CanMonitorApp:
         # Add Random Transmission section to left frame
         random_frame = ttk.LabelFrame(left_frame, text="Random Transmission (TP2 Timing)", padding=10)
         random_frame.pack(fill=tk.X, pady=10)
+
+        # Multi-group selection for random transmission
+        ttk.Label(random_frame, text="Source Groups:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.random_group_vars = [tk.BooleanVar(value=False) for _ in range(8)]
+        group_sel_frame = ttk.Frame(random_frame)
+        group_sel_frame.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
+        for i in range(8):
+            ttk.Checkbutton(
+                group_sel_frame, text=f"G{i}", variable=self.random_group_vars[i]
+            ).grid(row=0, column=i, sticky=tk.W, padx=2)
+
+        # Buttons to select/deselect all groups
+        group_btns_frame = ttk.Frame(random_frame)
+        group_btns_frame.grid(row=0, column=2, sticky=tk.W, padx=5)
+        ttk.Button(group_btns_frame, text="All", command=lambda: [v.set(True) for v in self.random_group_vars]).pack(fill=tk.X)
+        ttk.Button(group_btns_frame, text="None", command=lambda: [v.set(False) for v in self.random_group_vars]).pack(fill=tk.X)
+
+        # Create a compact mode selection with a legend
+        ttk.Label(random_frame, text="Signal Mode:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=(8,2))
+        mode_opts = ["Sine", "Const", "Noise"]
+        self.random_group_mode = []
         
-        # Group selection for random transmission
-        ttk.Label(random_frame, text="Source Group:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.random_group_combo = ttk.Combobox(random_frame, width=5, values=[f"{i}" for i in range(8)])
-        self.random_group_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
-        self.random_group_combo.current(0)
+        # Create a frame with 2 rows of mode selectors (4 per row)
+        mode_sel_frame = ttk.Frame(random_frame)
+        mode_sel_frame.grid(row=1, column=1, columnspan=2, sticky=tk.W, padx=5, pady=(8,2))
         
-        # Frame for displaying current random values
-        values_frame = ttk.Frame(random_frame)
-        values_frame.grid(row=1, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
-        
-        ttk.Label(values_frame, text="Current Random Values:").grid(row=0, column=0, sticky=tk.W)
-        
-        # Labels to show current random values
-        self.random_roll_val = ttk.Label(values_frame, text="Roll: 0°")
-        self.random_roll_val.grid(row=1, column=0, sticky=tk.W, padx=5)
-        
-        self.random_pitch_val = ttk.Label(values_frame, text="Pitch: 0°")
-        self.random_pitch_val.grid(row=1, column=1, sticky=tk.W, padx=5)
-        
-        self.random_orient_val = ttk.Label(values_frame, text="Orient: 0°")
-        self.random_orient_val.grid(row=1, column=2, sticky=tk.W, padx=5)
-        
+        for i in range(8):
+            var = tk.StringVar(value="Sine")
+            row = i // 4  # Put 4 groups on each row
+            col = i % 4   # Arrange in columns within each row
+            
+            group_frame = ttk.LabelFrame(mode_sel_frame, text=f"G{i}", padding=(2,0))
+            group_frame.grid(row=row, column=col, padx=3, pady=2)
+            
+            cb = ttk.Combobox(group_frame, width=5, values=mode_opts, 
+                              state="readonly", textvariable=var)
+            cb.pack(padx=1, pady=1)
+            self.random_group_mode.append(var)
+
+        # Add a legend for the modes
+        legend_frame = ttk.LabelFrame(random_frame, text="Mode Legend", padding=(5,0))
+        legend_frame.grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(5,2))
+        ttk.Label(legend_frame, text="Sine: Smooth sinusoidal signal").pack(anchor=tk.W)
+        ttk.Label(legend_frame, text="Const: Fixed value signal").pack(anchor=tk.W) 
+        ttk.Label(legend_frame, text="Noise: Random fluctuating signal").pack(anchor=tk.W)
+
         # Status label for timing info
-        self.random_status = ttk.Label(random_frame, text="Idle", width=50)
-        self.random_status.grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
-        
+        self.random_status = ttk.Label(random_frame, text="Idle", width=60)
+        self.random_status.grid(row=3, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+
         # Start/Stop button
-        self.random_btn = ttk.Button(random_frame, text="Start Random Transmission", 
+        self.random_btn = ttk.Button(random_frame, text="Start Random Transmission",
                                     command=self.toggle_random_transmission)
-        self.random_btn.grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        self.random_btn.grid(row=4, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
         # Add a separator
         ttk.Separator(random_frame, orient=tk.HORIZONTAL).grid(
-            row=4, column=0, columnspan=3, sticky=tk.EW, pady=10)
+            row=5, column=0, columnspan=3, sticky=tk.EW, pady=10)
         
         # Information about timing rules
         timing_text = ("Timing rules:\n"
-                      "• Max 20 packets/second\n"
+                      "• Max 20 packets/second per group\n"
                       "• Send immediately if angle changes ≥5°\n"
                       "• Send at least every 2 seconds\n"
                       "• Roll, pitch and orientation treated independently")
         ttk.Label(random_frame, text=timing_text, justify=tk.LEFT).grid(
-            row=5, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+            row=6, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
         
         # === RIGHT COLUMN ===
         right_frame = ttk.LabelFrame(main_frame, text="CAN Messages", padding=10)
@@ -640,173 +661,140 @@ class CanMonitorApp:
             self.toggle_continuous_transmission()  # Stop continuous transmission
     
     def toggle_random_transmission(self):
-        """Starts or stops the random transmission mode"""
+        """Starts or stops the random transmission mode for selected groups"""
         if not self.is_connected:
             messagebox.showwarning("Not Connected", "Connect to the serial port first")
             return
-        
+
+        selected_groups = [i for i, v in enumerate(self.random_group_vars) if v.get()]
         if not self.random_transmission_active:
-            # Start random transmission
-            group_id = int(self.random_group_combo.get())
+            if not selected_groups:
+                messagebox.showwarning("No Groups Selected", "Select at least one group to start random transmission.")
+                return
             self.random_transmission_active = True
             self.random_btn.config(text="Stop Random Transmission")
-            
-            # Reset values
-            self.random_last_values = {'R': 0, 'C': 0, 'O': 0}
-            self.random_last_sent_time = {'R': 0, 'C': 0, 'O': 0}
-            
-            # Initialize sine wave parameters (different for each angle type)
-            self.sine_params = {
-                'R': {
-                    'amplitude': random.randint(20, 60),  # Range of motion
-                    'period': random.uniform(5, 15),      # Seconds per cycle
-                    'phase': random.uniform(0, 2*math.pi), # Starting phase
-                    'offset': random.randint(-30, 30)     # Center offset
-                },
-                'C': {
-                    'amplitude': random.randint(15, 45),
-                    'period': random.uniform(3, 10),
-                    'phase': random.uniform(0, 2*math.pi),
-                    'offset': random.randint(-20, 20)
-                },
-                'O': {
-                    'amplitude': random.randint(50, 120),
-                    'period': random.uniform(8, 20),
-                    'phase': random.uniform(0, 2*math.pi),
-                    'offset': random.randint(-50, 50)
+            self.random_status.config(text="Starting...")
+
+            # Reset per-group state
+            self.random_group_state = {}
+            for group_id in selected_groups:
+                mode = self.random_group_mode[group_id].get()
+                self.random_group_state[group_id] = {
+                    'last_values': {'R': 0, 'C': 0, 'O': 0},
+                    'last_sent_time': {'R': 0, 'C': 0, 'O': 0},
+                    'mode': mode,
+                    'const_value': random.randint(-90, 90),  # Para modo constante
+                    'sine_params': {
+                        'R': {
+                            'amplitude': random.randint(50, 120),
+                            'period': random.uniform(0.1, 10),
+                            'phase': random.uniform(0, 2*math.pi),
+                            'offset': random.randint(-50, 50)
+                        },
+                        'C': {
+                            'amplitude': random.randint(50, 120),
+                            'period': random.uniform(0.1, 10),
+                            'phase': random.uniform(0, 2*math.pi),
+                            'offset': random.randint(-50, 50)
+                        },
+                        'O': {
+                            'amplitude': random.randint(50, 120),
+                            'period': random.uniform(0.1, 10),
+                            'phase': random.uniform(0, 2*math.pi),
+                            'offset': random.randint(-50, 50)
+                        }
+                    },
+                    'start_time': time.time()
                 }
-            }
-            
-            # Start the thread
             self.random_transmission_thread = threading.Thread(
-                target=self.random_transmission_loop,
-                args=(group_id,),
+                target=self.random_transmission_loop_multi,
+                args=(selected_groups,),
                 daemon=True
             )
             self.random_transmission_thread.start()
-            
-            # Log
             timestamp = self.format_timestamp()
             self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
-            self.rx_text.insert(tk.END, f"Started sinusoidal transmission for Group {group_id}\n", "system")
+            self.rx_text.insert(tk.END, f"Started random transmission for Groups: {', '.join(str(g) for g in selected_groups)}\n", "system")
             self.autoscroll()
         else:
-            # Stop random transmission
             self.random_transmission_active = False
             self.random_btn.config(text="Start Random Transmission")
             self.random_status.config(text="Idle")
-            
-            # Log
             timestamp = self.format_timestamp()
             self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
-            self.rx_text.insert(tk.END, "Stopped sinusoidal transmission\n", "system")
+            self.rx_text.insert(tk.END, "Stopped random transmission\n", "system")
             self.autoscroll()
-    
-    def random_transmission_loop(self, group_id):
-        """Thread function to send sinusoidal angle values with TP2 timing rules"""
-        last_global_send = time.time()  # For minimum interval between packets (max 20/sec)
-        start_time = time.time()        # Reference time for sine waves
-        next_angle_index = 0            # To ensure round-robin between angle types
-        
+
+    def random_transmission_loop_multi(self, group_ids):
+        """Thread function to send random angle values for multiple groups with TP2 timing rules"""
         angle_types = ['R', 'C', 'O']
-        
+        last_global_send = {g: 0 for g in group_ids}
+        next_angle_index = {g: 0 for g in group_ids}
         while self.random_transmission_active and self.is_connected:
-            current_time = time.time()
-            elapsed = current_time - start_time
-            
-            # Determine the next angle type to check (round-robin)
-            angle_type = angle_types[next_angle_index]
-            next_angle_index = (next_angle_index + 1) % 3
-            
-            # Calculate new value based on sine wave with some randomness
-            params = self.sine_params[angle_type]
-            sine_value = params['amplitude'] * math.sin(2 * math.pi * elapsed / params['period'] + params['phase']) + params['offset']
-            
-            # Add small random variation to make it more natural (±2 degrees)
-            new_value = int(sine_value + random.uniform(-2, 2))
-            
-            # Ensure value stays within range
-            new_value = max(-179, min(180, new_value))
-            
-            # Update display for this angle type
-            if angle_type == 'R':
-                self.root.after(0, lambda v=new_value: self.random_roll_val.config(text=f"Roll: {v}°"))
-            elif angle_type == 'C':
-                self.root.after(0, lambda v=new_value: self.random_pitch_val.config(text=f"Pitch: {v}°"))
-            else: # 'O'
-                self.root.after(0, lambda v=new_value: self.random_orient_val.config(text=f"Orient: {v}°"))
-            
-            # Time since last send for this angle
-            time_since_last = current_time - self.random_last_sent_time.get(angle_type, 0)
-            
-            # Check if we need to send this angle
-            should_send = False
-            reason = ""
-            
-            # Rule 1: If the angle changed by 5 degrees or more
-            if abs(new_value - self.random_last_values.get(angle_type, 0)) >= 5:
-                should_send = True
-                reason = "≥5° change"
-            
-            # Rule 2: If we haven't sent this angle in 2 seconds
-            elif time_since_last >= 2.0:
-                should_send = True
-                reason = "2s timeout"
-            
-            # Only send if minimum interval passed (max 20 packets/second)
-            if should_send and (current_time - last_global_send) >= 0.250:  # 250ms minimum interval (aiming for 50ms)
-                # Send the angle
-                can_id = f"{0x100 + group_id:x}"
-                
-                # Format as string (angleType + value)
-                angle_string = f"{angle_type}{new_value}"
-                
-                # Convert to bytes
-                data_bytes = []
-                for char in angle_string:
-                    data_bytes.append(f"{ord(char):02x}")
-                
-                # Build command
-                cmd = f"SEND_{can_id}"
-                for byte in data_bytes:
-                    cmd += f"_{byte}"
-                
-                # Send the command
-                try:
-                    self.serial_port.write((cmd + "\n").encode('utf-8'))
-                    
-                    # Update status with information about this packet
-                    status_text = f"Sent {angle_type}={new_value}° ({reason})"
-                    self.root.after(0, lambda t=status_text: self.random_status.config(text=t))
-                    
-                    # Update sent time and value
-                    self.random_last_sent_time[angle_type] = current_time
-                    self.random_last_values[angle_type] = new_value
-                    last_global_send = current_time
-                    
-                    # Log to message window with timestamp
-                    msg = f"Sine: Sent {angle_type}={new_value}° for Group {group_id} ({reason})"
-                    timestamp = self.format_timestamp()  # Get timestamp here
-                    self.root.after(0, lambda t=timestamp, m=msg: self.rx_text.insert(tk.END, f"{t} ", "timestamp"))
-                    self.root.after(0, lambda m=msg: self.rx_text.insert(tk.END, f"{m}\n", "tx_msg"))
-                    self.root.after(0, self.autoscroll)
-                    
-                    # Wait a bit before trying the next angle (respect max 20 packets/sec)
-                    time.sleep(0.05)
-                except Exception as e:
-                    # Error handling
-                    self.root.after(0, lambda: self.rx_text.insert(
-                        tk.END, f"Error sending angle: {str(e)}\n", "error"))
-                    self.root.after(0, self.autoscroll)
-                    
-                    # May need to stop if serial connection is lost
-                    if not self.is_connected:
-                        self.random_transmission_active = False
-                        break
-            
-            # Small sleep to prevent CPU overuse
-            time.sleep(0.02)
-    
+            now = time.time()
+            for group_id in group_ids:
+                state = self.random_group_state[group_id]
+                elapsed = now - state['start_time']
+                angle_type = angle_types[next_angle_index[group_id]]
+                next_angle_index[group_id] = (next_angle_index[group_id] + 1) % 3
+
+                mode = state.get('mode', 'Sine')
+                if mode == "Sine":
+                    params = state['sine_params'][angle_type]
+                    sine_value = params['amplitude'] * math.sin(2 * math.pi * elapsed / params['period'] + params['phase']) + params['offset']
+                    new_value = int(sine_value + random.uniform(-2, 2))
+                elif mode == "Const":
+                    new_value = state['const_value']
+                elif mode == "Noise":
+                    new_value = random.randint(-179, 180)
+                else:
+                    new_value = 0
+                new_value = max(-179, min(180, new_value))
+
+                # Timing logic
+                last_sent = state['last_sent_time'].get(angle_type, 0)
+                last_val = state['last_values'].get(angle_type, 0)
+                should_send = False
+                reason = ""
+                if abs(new_value - last_val) >= 5:
+                    should_send = True
+                    reason = "≥5° change"
+                elif now - last_sent >= 2.0:
+                    should_send = True
+                    reason = "2s timeout"
+                # Max 20 packets/sec per group, so 0.050s (hardcoded to 5 packets/sec, so 0.200s)
+                if should_send and (now - last_global_send[group_id]) >= 0.200:
+                    can_id = f"{0x100 + group_id:x}"
+                    angle_string = f"{angle_type}{new_value}"
+                    data_bytes = [f"{ord(c):02x}" for c in angle_string]
+                    cmd = f"SEND_{can_id}" + ''.join(f"_{b}" for b in data_bytes)
+                    try:
+                        self.serial_port.write((cmd + "\n").encode('utf-8'))
+                        status_text = f"G{group_id} {angle_type}={new_value}° ({reason}, {mode})"
+                        self.root.after(0, lambda t=status_text: self.random_status.config(text=t))
+                        state['last_sent_time'][angle_type] = now
+                        state['last_values'][angle_type] = new_value
+                        last_global_send[group_id] = now
+                        msg = f"Random: Sent {angle_type}={new_value}° for Group {group_id} ({reason}, {mode})"
+                        timestamp = self.format_timestamp()
+                        self.root.after(0, lambda t=timestamp, m=msg: self.rx_text.insert(tk.END, f"{t} ", "timestamp"))
+                        self.root.after(0, lambda m=msg: self.rx_text.insert(tk.END, f"{m}\n", "tx_msg"))
+                        self.root.after(0, self.autoscroll)
+                        time.sleep(0.01)
+                    except Exception as e:
+                        self.root.after(0, lambda: self.rx_text.insert(
+                            tk.END, f"Error sending angle: {str(e)}\n", "error"))
+                        self.root.after(0, self.autoscroll)
+                        if not self.is_connected:
+                            self.random_transmission_active = False
+                            break
+                # Small sleep to prevent CPU overuse
+                time.sleep(0.005)
+            # If no groups are selected anymore, stop
+            if not any(self.random_group_vars[g].get() for g in group_ids):
+                self.root.after(0, self.toggle_random_transmission)
+                break
+
     def on_closing(self):
         """Cleanup when the application is closing"""
         # Stop continuous transmission if active
