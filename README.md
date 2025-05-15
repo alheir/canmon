@@ -2,6 +2,8 @@
 
 `canmon` is a tool designed to help students of the ITBA Embedded Systems course validate and debug their implementation of the CAN protocol for Practical Assignment No. 2. It consists of an Arduino firmware and a graphical user interface (GUI) in Python.
 
+![alt text](https://i.imgur.com/0iIjL92.png)
+
 ## Main Components
 
 1.  **Arduino Firmware (`fw/arducanmon/`)**:
