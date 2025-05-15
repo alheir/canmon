@@ -195,6 +195,11 @@ class CanMonitorApp:
         self.random_last_values = {'R': 0, 'C': 0, 'O': 0}
         self.random_last_sent_time = {'R': 0, 'C': 0, 'O': 0}
         
+        # Variables for search functionality
+        self.search_term = ""
+        self.search_matches = []
+        self.current_match = -1
+        
         # Create interface
         self.create_widgets()
         
@@ -396,6 +401,27 @@ class CanMonitorApp:
         right_frame = ttk.LabelFrame(main_frame, text="CAN Messages", padding=10)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
+        # Search frame for message filtering
+        search_frame = ttk.Frame(right_frame)
+        search_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(search_frame, text="Search:").pack(side=tk.LEFT, padx=5)
+        self.search_entry = ttk.Entry(search_frame, width=20)
+        self.search_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        self.search_entry.bind("<Return>", self.search_text)
+        
+        self.search_btn = ttk.Button(search_frame, text="Find", command=self.search_text)
+        self.search_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.prev_btn = ttk.Button(search_frame, text="↑", width=2, command=lambda: self.navigate_search(-1))
+        self.prev_btn.pack(side=tk.LEFT, padx=2)
+        
+        self.next_btn = ttk.Button(search_frame, text="↓", width=2, command=lambda: self.navigate_search(1))
+        self.next_btn.pack(side=tk.LEFT, padx=2)
+        
+        self.match_label = ttk.Label(search_frame, text="")
+        self.match_label.pack(side=tk.LEFT, padx=5)
+        
         # Area to display received messages
         self.rx_text = scrolledtext.ScrolledText(right_frame, width=50, height=20)
         self.rx_text.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -405,6 +431,18 @@ class CanMonitorApp:
         self.rx_text.tag_config("rx_msg", foreground="blue")
         self.rx_text.tag_config("system", foreground="black")
         self.rx_text.tag_config("error", foreground="red")
+        self.rx_text.tag_config("timestamp", foreground="gray")
+        self.rx_text.tag_config("search_highlight", background="yellow")
+        
+        # Create right-click (context) menu for copy functionality
+        self.context_menu = tk.Menu(self.rx_text, tearoff=0)
+        self.context_menu.add_command(label="Copy Selected", command=self.copy_selected)
+        self.context_menu.add_command(label="Copy All", command=self.copy_all)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Clear All", command=lambda: self.rx_text.delete(1.0, tk.END))
+        
+        # Bind right-click to show context menu
+        self.rx_text.bind("<Button-3>", self.show_context_menu)
         
         # Buttons to clear and enable/disable autoscroll
         btn_frame = ttk.Frame(right_frame)
@@ -412,6 +450,12 @@ class CanMonitorApp:
         
         self.clear_btn = ttk.Button(btn_frame, text="Clear", command=lambda: self.rx_text.delete(1.0, tk.END))
         self.clear_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Add autoscroll toggle
+        self.autoscroll_var = tk.BooleanVar(value=True)
+        self.autoscroll_check = ttk.Checkbutton(
+            btn_frame, text="Autoscroll", variable=self.autoscroll_var)
+        self.autoscroll_check.pack(side=tk.LEFT, padx=5)
         
         # Area for interpreted TP2 messages
         tp2_frame = ttk.LabelFrame(right_frame, text="Interpreted TP2 Messages", padding=10)
@@ -470,6 +514,11 @@ class CanMonitorApp:
                                         command=self.open_plot_window)
         self.open_plot_btn.grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
 
+    def format_timestamp(self):
+        """Returns a formatted timestamp string for the current time"""
+        now = datetime.now()
+        return now.strftime("[%H:%M:%S.%f")[:-3] + "]"  # Format as [HH:MM:SS.mmm]
+
     def toggle_input_method(self):
         """Toggles between numeric and string input methods"""
         if self.input_method.get() == "numeric":
@@ -478,6 +527,11 @@ class CanMonitorApp:
         else:
             self.numeric_frame.grid_remove()
             self.string_frame.grid()
+    
+    def autoscroll(self):
+        """Only scrolls to the end if autoscroll is enabled"""
+        if self.autoscroll_var.get():
+            self.rx_text.see(tk.END)
     
     def toggle_continuous_transmission(self):
         """Starts or stops continuous angle transmission"""
@@ -492,8 +546,10 @@ class CanMonitorApp:
             self.continuous_active = True
             self.period_combo.configure(state="disabled")  # Disable changing period while active
             self.send_continuous_angle()
+            timestamp = self.format_timestamp()
+            self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
             self.rx_text.insert(tk.END, f"Started continuous angle transmission ({self.period_combo.get()}ms)\n", "system")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
         else:
             # Stop continuous transmission
             self.continuous_active = False
@@ -501,8 +557,10 @@ class CanMonitorApp:
             if self.continuous_timer:
                 self.root.after_cancel(self.continuous_timer)
                 self.continuous_timer = None
+            timestamp = self.format_timestamp()
+            self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
             self.rx_text.insert(tk.END, "Stopped continuous angle transmission\n", "system")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
 
     def send_continuous_angle(self):
         """Sends the last angle continuously at the selected period"""
@@ -548,8 +606,10 @@ class CanMonitorApp:
             # Periodically log the continuous transmission (once every ~2 seconds)
             current_time = time.time()
             if not hasattr(self, 'last_continuous_log') or current_time - self.last_continuous_log >= 2.0:
+                timestamp = self.format_timestamp()
+                self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
                 self.rx_text.insert(tk.END, f"{display_msg}\n", "tx_msg")
-                self.rx_text.see(tk.END)
+                self.autoscroll()
                 self.last_continuous_log = current_time
             
             # Schedule the next transmission
@@ -558,7 +618,7 @@ class CanMonitorApp:
             
         except Exception as e:
             self.rx_text.insert(tk.END, f"Error in continuous transmission: {str(e)}\n", "error")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
             self.continuous_var.set(False)
             self.toggle_continuous_transmission()  # Stop continuous transmission
     
@@ -609,8 +669,10 @@ class CanMonitorApp:
             self.random_transmission_thread.start()
             
             # Log
+            timestamp = self.format_timestamp()
+            self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
             self.rx_text.insert(tk.END, f"Started sinusoidal transmission for Group {group_id}\n", "system")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
         else:
             # Stop random transmission
             self.random_transmission_active = False
@@ -618,8 +680,10 @@ class CanMonitorApp:
             self.random_status.config(text="Idle")
             
             # Log
+            timestamp = self.format_timestamp()
+            self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
             self.rx_text.insert(tk.END, "Stopped sinusoidal transmission\n", "system")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
     
     def random_transmission_loop(self, group_id):
         """Thread function to send sinusoidal angle values with TP2 timing rules"""
@@ -703,10 +767,12 @@ class CanMonitorApp:
                     self.random_last_values[angle_type] = new_value
                     last_global_send = current_time
                     
-                    # Log to message window
+                    # Log to message window with timestamp
                     msg = f"Sine: Sent {angle_type}={new_value}° for Group {group_id} ({reason})"
+                    timestamp = self.format_timestamp()  # Get timestamp here
+                    self.root.after(0, lambda t=timestamp, m=msg: self.rx_text.insert(tk.END, f"{t} ", "timestamp"))
                     self.root.after(0, lambda m=msg: self.rx_text.insert(tk.END, f"{m}\n", "tx_msg"))
-                    self.root.after(0, self.rx_text.see, tk.END)
+                    self.root.after(0, self.autoscroll)
                     
                     # Wait a bit before trying the next angle (respect max 20 packets/sec)
                     time.sleep(0.05)
@@ -714,7 +780,7 @@ class CanMonitorApp:
                     # Error handling
                     self.root.after(0, lambda: self.rx_text.insert(
                         tk.END, f"Error sending angle: {str(e)}\n", "error"))
-                    self.root.after(0, self.rx_text.see, tk.END)
+                    self.root.after(0, self.autoscroll)
                     
                     # May need to stop if serial connection is lost
                     if not self.is_connected:
@@ -849,11 +915,16 @@ class CanMonitorApp:
                 # Start periodic timestamp updates
                 self.start_timestamp_updates()
                 
-                # Display system information
+                # Display system information with timestamps
                 os_info = platform.platform()
+                timestamp = self.format_timestamp()
+                self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
                 self.rx_text.insert(tk.END, f"System: {os_info}\n", "system")
+                
+                timestamp = self.format_timestamp()
+                self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
                 self.rx_text.insert(tk.END, f"Connected to {port} @ 115200 bps\n", "system")
-                self.rx_text.see(tk.END)
+                self.autoscroll()
             except Exception as e:
                 messagebox.showerror("Connection Error", str(e))
         else:
@@ -870,8 +941,10 @@ class CanMonitorApp:
                 self.serial_port.close()
             self.is_connected = False
             self.connect_btn['text'] = "Connect"
+            timestamp = self.format_timestamp()
+            self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
             self.rx_text.insert(tk.END, "Disconnected\n", "system")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
             
             # Reset TP2 data on disconnect
             self.reset_tp2_data()
@@ -888,7 +961,7 @@ class CanMonitorApp:
                     self.process_received_data(data)
                 except Exception as e:
                     self.root.after(0, lambda: self.rx_text.insert(tk.END, f"Read Error: {str(e)}\n", "error"))
-                    self.root.after(0, lambda: self.rx_text.see(tk.END))
+                    self.root.after(0, self.autoscroll)
             time.sleep(0.01)
     
     def process_received_data(self, data):
@@ -896,9 +969,15 @@ class CanMonitorApp:
         if not data:
             return
         
-        # Add to text area with blue color for reception
+        # Add timestamp to the message
+        timestamp = self.format_timestamp()
+        
+        # Insert timestamp with gray color, then the message with blue color
+        self.root.after(0, lambda: self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp"))
         self.root.after(0, lambda: self.rx_text.insert(tk.END, f"{data}\n", "rx_msg"))
-        self.root.after(0, lambda: self.rx_text.see(tk.END))
+        
+        # Only auto-scroll if the autoscroll option is enabled
+        self.root.after(0, self.autoscroll)
         
         # Check if it's a CAN message in TP2 format
         if data.startswith("CAN_RX_"):
@@ -1039,9 +1118,11 @@ class CanMonitorApp:
                 cmd += f"_{byte}"
             
             self.serial_port.write((cmd + "\n").encode('utf-8'))
-            # Green color for sent messages
+            # Green color for sent messages with timestamp
+            timestamp = self.format_timestamp()
+            self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
             self.rx_text.insert(tk.END, f"Sending: {cmd}\n", "tx_msg")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
             
         except Exception as e:
             messagebox.showerror("Error Sending", str(e))
@@ -1119,9 +1200,11 @@ class CanMonitorApp:
                 cmd += f"_{byte}"
             
             self.serial_port.write((cmd + "\n").encode('utf-8'))
-            # Green color for sent messages
+            # Green color for sent messages with timestamp
+            timestamp = self.format_timestamp()
+            self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
             self.rx_text.insert(tk.END, f"{display_msg}\n", "tx_msg")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
             
             # If continuous transmission is active, restart it with the new values
             if self.continuous_active:
@@ -1167,9 +1250,11 @@ class CanMonitorApp:
         try:
             cmd = f"MODE_{mode}"
             self.serial_port.write((cmd + "\n").encode('utf-8'))
-            # Green color for sent messages
+            # Green color for sent messages with timestamp
+            timestamp = self.format_timestamp()
+            self.rx_text.insert(tk.END, f"{timestamp} ", "timestamp")
             self.rx_text.insert(tk.END, f"Changing CAN mode: {mode}\n", "tx_msg")
-            self.rx_text.see(tk.END)
+            self.autoscroll()
         except Exception as e:
             messagebox.showerror("Error Changing Mode", str(e))
     
@@ -1277,6 +1362,109 @@ class CanMonitorApp:
             
         except Exception as e:
             messagebox.showerror("Plot Error", str(e))
+
+    def show_context_menu(self, event):
+        """Show the context menu on right-click"""
+        try:
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            # Make sure to release the menu
+            self.context_menu.grab_release()
+    
+    def copy_selected(self):
+        """Copy selected text to clipboard"""
+        try:
+            selected_text = self.rx_text.get(tk.SEL_FIRST, tk.SEL_LAST)
+            self.root.clipboard_clear()
+            self.root.clipboard_append(selected_text)
+        except tk.TclError:
+            # No selection
+            pass
+    
+    def copy_all(self):
+        """Copy all text to clipboard"""
+        all_text = self.rx_text.get(1.0, tk.END)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(all_text)
+        
+    def search_text(self, event=None):
+        """Search for the given text in the message display"""
+        search_term = self.search_entry.get().strip()
+        if not search_term:
+            self.match_label.config(text="")
+            self.clear_search_highlights()
+            return
+        
+        self.search_term = search_term
+        self.search_matches = []
+        self.current_match = -1
+        
+        # Clear previous highlights
+        self.clear_search_highlights()
+        
+        # Get all text
+        all_text = self.rx_text.get(1.0, tk.END)
+        
+        # Find all occurrences of the search term
+        start_idx = 0
+        while True:
+            idx = all_text.find(self.search_term, start_idx)
+            if idx == -1:
+                break
+                
+            line_count = all_text[:idx].count('\n')
+            line_start = all_text[:idx].rfind('\n')
+            if line_start == -1:
+                line_start = 0
+            else:
+                line_start += 1  # Skip the newline character
+                
+            col = idx - line_start
+            
+            # tkinter text indices are 1-based for lines
+            self.search_matches.append(f"{line_count + 1}.{col}")
+            start_idx = idx + len(self.search_term)
+        
+        # Update match count label
+        if self.search_matches:
+            self.match_label.config(text=f"1/{len(self.search_matches)}")
+            self.current_match = 0
+            self.highlight_current_match()
+        else:
+            self.match_label.config(text="No matches")
+    
+    def clear_search_highlights(self):
+        """Clear all search highlights"""
+        self.rx_text.tag_remove("search_highlight", "1.0", tk.END)
+    
+    def highlight_current_match(self):
+        """Highlight the current match"""
+        if not self.search_matches or self.current_match < 0:
+            return
+            
+        # Get the position of the current match
+        pos = self.search_matches[self.current_match]
+        end_idx = f"{pos}+{len(self.search_term)}c"
+        
+        # Highlight the match
+        self.rx_text.tag_add("search_highlight", pos, end_idx)
+        
+        # Ensure the match is visible
+        self.rx_text.see(pos)
+        
+        # Update the count label
+        self.match_label.config(text=f"{self.current_match + 1}/{len(self.search_matches)}")
+    
+    def navigate_search(self, direction):
+        """Navigate through search results (1 = forward, -1 = backward)"""
+        if not self.search_matches:
+            return
+            
+        self.current_match = (self.current_match + direction) % len(self.search_matches)
+        
+        # Clear previous highlights and highlight the current match
+        self.clear_search_highlights()
+        self.highlight_current_match()
 
 if __name__ == "__main__":
     root = tk.Tk()
